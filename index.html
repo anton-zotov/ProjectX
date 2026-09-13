@@ -7,6 +7,58 @@
   </head>
   <body>
     <canvas id="game"></canvas>
+
+    <div id="admin">
+      <button id="admin-toggle" type="button" title="Настройки">⚙</button>
+      <div id="admin-panel" class="hidden">
+        <div class="admin-title">админка</div>
+
+        <label class="row">
+          <span>скорость движения</span>
+          <input id="s-speed" type="range" min="20" max="400" step="5" value="120" />
+          <output id="o-speed">120</output>
+        </label>
+
+        <label class="row check">
+          <input id="s-auto" type="checkbox" />
+          <span>авто-движение</span>
+        </label>
+
+        <label class="row">
+          <span>скорость цвета</span>
+          <input id="s-color" type="range" min="0" max="5" step="0.1" value="1" />
+          <output id="o-color">1.0</output>
+        </label>
+
+        <label class="row">
+          <span>размер поля, экраны</span>
+          <input id="s-size" type="range" min="2" max="6" step="0.5" value="3" />
+          <output id="o-size">3 × 2</output>
+        </label>
+
+        <label class="row">
+          <span>размер ячейки фона</span>
+          <input id="s-cell" type="range" min="50" max="300" step="5" value="120" />
+          <output id="o-cell">120</output>
+        </label>
+
+        <label class="row check">
+          <input id="s-grid" type="checkbox" checked />
+          <span>сетка 3D</span>
+        </label>
+
+        <label class="row check">
+          <input id="s-quality" type="checkbox" checked />
+          <span>сглаживание 2× (снять = быстрее)</span>
+        </label>
+
+        <label class="row check">
+          <input id="s-profiler" type="checkbox" />
+          <span>профилирование (время кадра)</span>
+        </label>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

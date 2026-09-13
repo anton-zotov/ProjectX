@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Local-only: version snapshots, dev tooling, release artifacts
+versions/
+devtools/
+release/
+.npm-cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
