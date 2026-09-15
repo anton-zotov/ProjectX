@@ -59,6 +59,8 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const oElastic = document.querySelector<HTMLOutputElement>('#o-elastic')!
   const gravity = document.querySelector<HTMLInputElement>('#s-gravity')!
   const oGravity = document.querySelector<HTMLOutputElement>('#o-gravity')!
+  const stance = document.querySelector<HTMLInputElement>('#s-stance')!
+  const oStance = document.querySelector<HTMLOutputElement>('#o-stance')!
   const auto = document.querySelector<HTMLInputElement>('#s-auto')!
   const color = document.querySelector<HTMLInputElement>('#s-color')!
   const oColor = document.querySelector<HTMLOutputElement>('#o-color')!
@@ -76,6 +78,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const syncOutputs = (): void => {
     oThrust.textContent = String(s.thrust)
     oGravity.textContent = String(s.gravity)
+    oStance.textContent = `${Math.round(s.stance * 100)} %`
     oElastic.textContent = `${Math.round(s.elasticity * 100)} %`
     oColor.textContent = s.colorSpeed.toFixed(1)
     const h = Math.round(s.fieldScreens * (2 / 3) * 10) / 10
@@ -101,6 +104,11 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   })
   gravity.addEventListener('input', () => {
     s.gravity = Number(gravity.value)
+    syncOutputs()
+  })
+  // muscles: 0 % is a pure ragdoll, 100 % gets up and holds a stance
+  stance.addEventListener('input', () => {
+    s.stance = Number(stance.value)
     syncOutputs()
   })
   auto.addEventListener('change', () => {

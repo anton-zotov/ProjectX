@@ -209,6 +209,7 @@ test('admin panel', async (t) => {
   await t.test('outputs start from the default settings', () => {
     assert.equal(el('#o-thrust').textContent, '1900')
     assert.equal(el('#o-elastic').textContent, '100 %')
+    assert.equal(el('#o-stance').textContent, '35 %')
     assert.equal(el('#o-gravity').textContent, '180')
     assert.equal(el('#o-color').textContent, '1.0')
     assert.equal(el('#o-size').textContent, '3 × 2')

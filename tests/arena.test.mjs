@@ -75,6 +75,7 @@ test('default settings are the documented ones', () => {
     bodyScale: 0.85,
     showSkeleton: true,
     elasticity: 1,
+    stance: 0.35,
   })
 })
 
@@ -106,7 +107,9 @@ test('the camera is centred on the character head', () => {
 
 test('the field is fieldScreens x 3/8 screens and contains the character', () => {
   for (const fieldScreens of [2, 3, 6]) {
-    const s = makeScene({ fieldScreens, autoPilot: false, gravity: 0, thrust: 2400 })
+    // no muscles here: this is about the field and its walls, and the stance
+    // deliberately holds the character back while he is on the ground
+    const s = makeScene({ fieldScreens, autoPilot: false, gravity: 0, thrust: 1900, stance: 0 })
     assert.equal(s.scene.worldW, fieldScreens * 320)
     assert.equal(s.scene.worldH, fieldScreens * 320 * (3 / 8))
 

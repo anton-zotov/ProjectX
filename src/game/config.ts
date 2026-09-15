@@ -41,6 +41,12 @@ export const SIM = {
    */
   contactReach: 3.5,
   /**
+   * How hard the two limbs of a pair (leg against leg, arm against arm) push
+   * each other apart per solver iteration. Gentler than the contact between a
+   * limb and the body: a hard shove there knocks the hips about.
+   */
+  twinPush: 0.25,
+  /**
    * How elastic the whole frame is; 1 = the tuning below exactly as written.
    * It scales the stretch allowance of every link AND softens its spring, so
    * the admin slider can be dragged while the character is flying and the
@@ -151,45 +157,34 @@ export const LINK = {
 }
 
 /**
- * The pose springs. Distances alone cannot hold a limb in its attitude: two
- * links have a mirror solution (the limb turned inside out) in which every
- * length is the same again, so the springs see nothing wrong and leave the
- * limb there - and a hard hit can knock it into that solution.
+ * The target skeleton - the "stance" of the original game.
  *
- * So every circle of a limb (and of the head) is also pulled towards the place
- * it has in the rest pose, measured IN THE BODY'S OWN FRAME: the pose turns
- * with the body, but a limb cannot rotate away from it and stay away.
- * `frequency` is the stiffness (acceleration per px of deviation). It is
- * deliberately modest, so a hit still throws the limb aside and the thrust
- * still tumbles the whole body.
+ * Links alone hold the SHAPE of the frame, but they cannot straighten it: an
+ * upright body on its feet is an inverted pendulum, its equilibrium is
+ * unstable, and it must topple (measured: 1.5 s, however stiff the links are).
+ * The original solves this the way a fighter does - with muscles: the game
+ * keeps a SECOND skeleton, the stance, and pulls every circle towards its
+ * place in it. That pull does straighten the body, because the stance is
+ * anchored upright in the WORLD, not to the body.
+ *
+ * The muscles only work while the feet are near the floor (`reach`), so in the
+ * air the character is a pure ragdoll and the thrust still tumbles it.
+ * `frequency` is the stiffness (acceleration per px of deviation); `damping`
+ * is how much of a circle's velocity relative to the body is removed each
+ * substep - without it the pull makes the frame buzz.
  */
-export const POSE = {
-  /**
-   * Stiffness of the pose springs (acceleration per px of deviation). They are
-   * the "muscles" of the frame: they pull a limb back to the place it has in
-   * the rest pose, which is what rescues it after a hard hit - a distance link
-   * alone cannot, because the mirror attitude (the limb turned inside out) has
-   * exactly the same lengths and no spring sees anything wrong.
-   */
-  frequency: 0,
-  /** No pull at all while a circle is within this many px of its place. */
-  deadzone: 3,
-  /**
-   * The muscles only work while the character is moving: below `idleSpeed`
-   * (px/s) the pull fades out completely, so a body lying on the floor stays
-   * there instead of trying to get up and thrashing about. It comes back the
-   * moment anything moves.
-   */
-  idleSpeed: 12,
-  activeSpeed: 45,
-  /**
-   * A circle resting against a wall is pulled along it, never into it: pulling
-   * into the wall would be answered by the wall every substep, and that
-   * reaction shakes the whole frame.
-   */
-  wallGap: 1.5,
-  /** Which sections the springs act on (the body is held by its links). */
-  parts: ['head', 'armL', 'armR', 'legL', 'legR'],
+export const STAND = {
+  frequency: 150,
+  damping: 0.06,
+  reach: 16,
+  gain: {
+    head: 0.35,
+    torso: 1,
+    armL: 0.5,
+    armR: 0.5,
+    legL: 1.2,
+    legR: 1.2,
+  },
 }
 
 /**

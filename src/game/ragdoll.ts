@@ -1,4 +1,4 @@
-import { BODY, LIMITS, LINK, POSE, SIM, type BodyKind, type LinkKind, type ShapeKind } from './config'
+import { BODY, LIMITS, LINK, SIM, STAND, type BodyKind, type LinkKind, type ShapeKind } from './config'
 
 /* ------------------------------------------------------------------ *
  *  Ragdoll ("чувачок")
@@ -75,6 +75,11 @@ export interface StepInput {
   thrustY: number
   /** Gravity acceleration applied to every circle, px/s^2. */
   gravity: number
+  /**
+   * How hard the muscles hold the stance, 0..1 (the admin slider). At 0 the
+   * character is a pure ragdoll; at 1 he gets up and stays on his feet.
+   */
+  stance?: number
 }
 
 /**
@@ -281,7 +286,7 @@ export class Ragdoll {
    * matter: they are pushed apart so that no two circles of the body ever
    * intersect (the two legs, a limb and the body, the head and the body).
    */
-  private readonly contacts: Array<[number, number]> = []
+  private readonly contacts: Array<[number, number, boolean]> = []
   /**
    * How much harder the force point has to be pushed than the whole body, so
    * that the thrust setting means "the acceleration of the body".
@@ -368,32 +373,36 @@ export class Ragdoll {
       }
     }
 
-    // the rest pose of every circle, in the body's own frame: the origin is
-    // torso0 and the axes are "along the body" and "across it"
-    const origin = this.point('torso0')
-    const down = this.point(PELVIS)
-    const len = Math.hypot(down.x - origin.x, down.y - origin.y) || 1
-    const ax = (down.x - origin.x) / len
-    const ay = (down.y - origin.y) / len
+    // The target skeleton: where every circle sits in the rest pose, measured
+    // upright from the body's centre of mass. The muscles pull towards these
+    // points (see `stand`), which is what lets the character get up and hold a
+    // stance - links alone can never say which way is up.
+    const middle = this.center()
     for (const p of this.points) {
-      const dx = p.x - origin.x
-      const dy = p.y - origin.y
-      this.poseX.push(dx * ax + dy * ay)
-      this.poseY.push(-dx * ay + dy * ax)
+      this.poseX.push(p.x - middle.x)
+      this.poseY.push(p.y - middle.y)
     }
 
     // Which pairs of circles have to be kept apart. Linked circles are handled
     // by their link (which already stops them overlapping); everything else
-    // that starts out close enough to ever meet goes into the list.
+    // that starts out close enough to ever meet goes into the list - except the
+    // two limbs of a pair: the left and the right hip hang on the same body
+    // circle and must not shove each other around.
     const linked = new Set(this.links.map((l) => (l.a < l.b ? `${l.a}-${l.b}` : `${l.b}-${l.a}`)))
+    const twins = (a: PartId, b: PartId): boolean =>
+      (a === 'legL' && b === 'legR') ||
+      (a === 'legR' && b === 'legL') ||
+      (a === 'armL' && b === 'armR') ||
+      (a === 'armR' && b === 'armL')
     for (let i = 0; i < this.points.length; i++) {
       for (let j = i + 1; j < this.points.length; j++) {
         if (linked.has(`${i}-${j}`)) continue
         const p1 = this.points[i]
         const p2 = this.points[j]
+        const soft = twins(p1.part, p2.part)
         const touching = p1.r + p2.r
         const apart = Math.hypot(p2.x - p1.x, p2.y - p1.y)
-        if (apart < touching * SIM.contactReach) this.contacts.push([i, j])
+        if (apart < touching * SIM.contactReach) this.contacts.push([i, j, soft])
       }
     }
 
@@ -413,73 +422,81 @@ export class Ragdoll {
   }
 
   /**
-   * Pull every circle of the limbs (and the head) back towards its place in
-   * the rest pose, measured in the body's own frame. This is what makes the
-   * frame return to its pose on its own: a distance link cannot do it, because
-   * the mirror attitude has exactly the same lengths.
+   * The muscles: pull every circle towards its place in the target skeleton -
+   * the stance - which is the rest pose held UPRIGHT and anchored at the
+   * body's current centre of mass. That is what can straighten the character
+   * and keep it on its feet; links alone cannot, because they never say which
+   * way is up.
+   *
+   * `stance` comes from the admin slider (0 = pure ragdoll). The pull only
+   * works while the feet are near the floor, so flying and tumbling stay as
+   * they were.
    */
-  private holdPose(dt: number, bounds: Bounds): void {
-    const origin = this.point('torso0')
-    const down = this.point(PELVIS)
-    const len = Math.hypot(down.x - origin.x, down.y - origin.y) || 1
-    const ax = (down.x - origin.x) / len
-    const ay = (down.y - origin.y) / len
+  private stand(stance: number, dt: number, bounds: Bounds): void {
+    if (stance <= 0) return
+    let gap = Infinity
+    for (const p of this.points) gap = Math.min(gap, bounds.h - (p.y + p.r))
+    if (gap >= STAND.reach) return
+    const contact = 1 - gap / STAND.reach
 
-    // The muscles rest when the character does: below `idleSpeed` there is no
-    // pull at all, so a body lying on the floor stays there. Anything moving
-    // wakes them up again.
-    let moved = 0
-    for (const p of this.points) moved += Math.hypot(p.x - p.px, p.y - p.py)
-    const speed = moved / this.points.length / dt
-    const wake = (speed - POSE.idleSpeed) / (POSE.activeSpeed - POSE.idleSpeed)
-    if (wake <= 0) return
-    const k = POSE.frequency * dt * dt * Math.min(1, wake)
+    const c = this.center()
+    const k = STAND.frequency * stance * contact * dt * dt
+    const damp = STAND.damping * stance * contact
 
     // The pull is an internal force: whatever the limbs take, the body gives
-    // back. Without that the frame would push itself around (it drifts in
-    // zero gravity) and a swinging limb would not turn the body.
+    // back, so the frame never pushes itself around.
     let pushX = 0
     let pushY = 0
+    let sum = 0
+    for (const p of this.points) sum += 1 / p.im
 
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i]
-      if (!POSE.parts.includes(p.part)) continue
-      const tx = origin.x + this.poseX[i] * ax - this.poseY[i] * ay
-      const ty = origin.y + this.poseX[i] * ay + this.poseY[i] * ax
-      // no pull while the circle is roughly in its place: that is what lets the
-      // frame lie calmly, while a limb thrown far aside still gets pulled back
-      const offX = tx - p.x
-      const offY = ty - p.y
-      const off = Math.hypot(offX, offY)
-      if (off <= POSE.deadzone) continue
-      const gain = k * ((off - POSE.deadzone) / off)
-      let dx = offX * gain
-      let dy = offY * gain
-      // A circle lying against a wall is pulled ALONG it, never into it. Pulling
-      // into the wall would be answered by the wall on every substep and that
-      // reaction shakes the whole frame - but skipping the pull altogether is
-      // what let the body sprawl out on the floor like a puddle.
-      const gap = POSE.wallGap
-      if (p.y + p.r > bounds.h - gap && dy > 0) dy = 0
-      if (p.y - p.r < gap && dy < 0) dy = 0
-      if (p.x + p.r > bounds.w - gap && dx > 0) dx = 0
-      if (p.x - p.r < gap && dx < 0) dx = 0
+      const gain = STAND.gain[p.part]
+      if (!gain) continue
+
+      const tx = c.x + this.poseX[i]
+      const ty = c.y + this.poseY[i]
+      let dx = (tx - p.x) * k * gain
+      let dy = (ty - p.y) * k * gain
+
+      // A circle lying against a wall is pulled ALONG it, never into it:
+      // pushing into the wall would be answered by the wall every substep and
+      // that reaction shakes the whole frame.
+      const edge = 1.5
+      if (p.y + p.r > bounds.h - edge && dy > 0) dy = 0
+      if (p.y - p.r < edge && dy < 0) dy = 0
+      if (p.x + p.r > bounds.w - edge && dx > 0) dx = 0
+      if (p.x - p.r < edge && dx < 0) dx = 0
+
       p.x += dx
       p.y += dy
       const mass = 1 / p.im
-      pushX -= dx * mass
-      pushY -= dy * mass
+      pushX += dx * mass
+      pushY += dy * mass
+
+      // ...and damp the muscle: without it the pull makes the whole frame buzz
+      if (damp > 0) {
+        const vx = p.x - p.px
+        const vy = p.y - p.py
+        p.px += vx * damp
+        p.py += vy * damp
+      }
     }
 
+    // The reaction goes into the body as MOMENTUM: the total displacement the
+    // limbs got, times their mass, divided by the body's mass - a displacement
+    // every body circle shares. Getting this wrong (as it was: the plain sum of
+    // the corrections) pumps energy into the frame until it explodes.
     let body = 0
     for (const p of this.points) {
       if (p.part === 'torso') body += 1 / p.im
     }
-    if (body === 0) return
+    if (body === 0 || sum === 0) return
     for (const p of this.points) {
       if (p.part !== 'torso') continue
-      p.x += pushX / body
-      p.y += pushY / body
+      p.x -= pushX / body
+      p.y -= pushY / body
     }
   }
 
@@ -664,7 +681,7 @@ export class Ragdoll {
     push.y += input.thrustY * this.pushScale * dt2
 
     // 3. The pose springs hold the limbs where they belong
-    this.holdPose(dt, bounds)
+    this.stand(input.stance ?? 0, dt, bounds)
 
     // 4. Satisfy the skeleton and the walls together, iteratively. The XPBD
     //    accumulators live for one substep, so they start from zero.
@@ -712,16 +729,20 @@ export class Ragdoll {
 
   /**
    * Push apart the circles that are not linked to each other, so that no two
-   * circles of the body ever intersect. This is what keeps the two legs two
-   * legs: without it they pass through each other in the air and look like one
-   * thick leg, however far apart they were built.
+   * circles of the body intersect. This is what keeps the two legs two legs:
+   * without it they simply pass through one another in the air (measured: they
+   * overlap completely in 98% of frames) and read as one thick leg.
+   *
+   * The two limbs of a pair (left leg against right leg, left arm against the
+   * right arm) are handled GENTLY. A hard shove there is felt as the hips
+   * knocking each other about; the soft one only stops them sinking in.
    */
   private separate(): void {
-    for (const [i, j] of this.contacts) {
+    for (const [i, j, soft] of this.contacts) {
       const p1 = this.points[i]
       const p2 = this.points[j]
-      const dx = p2.x - p1.x
-      const dy = p2.y - p1.y
+      let dx = p2.x - p1.x
+      let dy = p2.y - p1.y
       const d = Math.hypot(dx, dy)
       const min = p1.r + p2.r
       if (d >= min || d < 1e-6) continue
@@ -729,13 +750,29 @@ export class Ragdoll {
       const w2 = p2.im
       const w = w1 + w2
       if (w === 0) continue
-      // half the overlap per iteration: the rest of the loop finishes the job,
-      // and pushing it all at once makes the pair jitter
-      const corr = ((min - d) / d) * 0.5
+
+      // part of the overlap per iteration: the rest of the loop finishes the
+      // job, and pushing it all at once makes the pair jitter
+      const corr = ((min - d) / d) * (soft ? SIM.twinPush : 0.5)
       p1.x -= dx * corr * (w1 / w)
       p1.y -= dy * corr * (w1 / w)
       p2.x += dx * corr * (w2 / w)
       p2.y += dy * corr * (w2 / w)
+
+      if (!soft) continue
+      // ...and take the fight out of the pair: damp the velocity ALONG the line
+      // between them (a proper damper - remove a share of the approach), so two
+      // limbs settle instead of bouncing off each other
+      const nx = dx / d
+      const ny = dy / d
+      const relX = p2.x - p2.px - (p1.x - p1.px)
+      const relY = p2.y - p2.py - (p1.y - p1.py)
+      const relN = relX * nx + relY * ny
+      const imp = (0.25 * relN) / w
+      p1.px -= imp * w1 * nx
+      p1.py -= imp * w1 * ny
+      p2.px += imp * w2 * nx
+      p2.py += imp * w2 * ny
     }
   }
 

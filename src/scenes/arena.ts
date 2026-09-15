@@ -29,6 +29,7 @@ export interface GameSettings {
   bodyScale: number // size of the character (skeleton scale)
   showSkeleton: boolean // paint the circles over the body (tuning view)
   elasticity: number // how rubbery the frame is (1 = the tuned default)
+  stance: number // 0..1: how hard the muscles hold the stance
 }
 
 export const defaultSettings = (): GameSettings => ({
@@ -43,6 +44,7 @@ export const defaultSettings = (): GameSettings => ({
   bodyScale: BODY.scale,
   showSkeleton: true,
   elasticity: 1,
+  stance: 0.35, // stands and stays calm, yet still moves and launches normally
 })
 
 /* ------------------------------------------------------------------ *
@@ -235,7 +237,7 @@ export class ArenaScene implements Scene {
     while (this.simAcc >= SIM.dt && steps < SIM.maxStepsPerFrame) {
       this.ragdoll.step(
         SIM.dt,
-        { thrustX: tx, thrustY: ty, gravity: this.settings.gravity },
+        { thrustX: tx, thrustY: ty, gravity: this.settings.gravity, stance: this.settings.stance },
         { w: this.worldW, h: this.worldH },
       )
       this.simAcc -= SIM.dt

@@ -313,6 +313,82 @@ test('no two circles of the body ever intersect', () => {
   assert.ok(worst < 1.5, `the circles are pushed apart (deepest overlap ${worst.toFixed(2)} px)`)
 })
 
+test('the legs stay two legs in flight, without knocking each other about', () => {
+  const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
+
+  const deepest = () => {
+    let worst = 0
+    for (let a = 0; a < 5; a++) {
+      for (let b = 0; b < 5; b++) {
+        const p1 = r.point(`legL${a}`)
+        const p2 = r.point(`legR${b}`)
+        worst = Math.max(worst, p1.r + p2.r - Math.hypot(p2.x - p1.x, p2.y - p1.y))
+      }
+    }
+    return worst
+  }
+
+  let overlap = 0
+  let share = 0
+  const frames = 60 * 12
+  for (let i = 0; i < frames; i++) {
+    run(r, 1, {
+      thrustX: Math.cos(i * 0.02) * DEFAULTS.thrust,
+      thrustY: Math.sin(i * 0.031) * DEFAULTS.thrust,
+      gravity: DEFAULTS.gravity,
+      stance: 0.35,
+    }, ARENA)
+    const now = deepest()
+    if (now > 0.5) share++
+    overlap = Math.max(overlap, now)
+  }
+  assert.ok(overlap < 1.5, `the legs never sink into each other (worst ${overlap.toFixed(2)} px)`)
+  assert.equal(share, 0, `not even for a moment (${share} of ${frames} frames)`)
+
+  // ...and while he just stands there, the hips must not twitch
+  const standing = onFloor()
+  run(standing, 60 * 3, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity, stance: 0.35 }, ARENA)
+  const before = standing.points.map((p) => ({ x: p.x, y: p.y }))
+  let twitch = 0
+  for (let i = 0; i < 60 * 6; i++) {
+    run(standing, 1, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity, stance: 0.35 }, ARENA)
+    for (const [k, p] of standing.points.entries()) {
+      twitch = Math.max(twitch, Math.hypot(p.x - before[k].x, p.y - before[k].y))
+      before[k] = { x: p.x, y: p.y }
+    }
+  }
+  assert.ok(twitch < 0.1, `the hips do not knock each other about (worst ${twitch.toFixed(3)} px/frame)`)
+})
+
+test('the stance gets him up and holds him, and can be switched off', () => {
+  const standFor = (stance) => {
+    const r = onFloor()
+    let ticks = 0
+    for (let i = 0; i < 60 * 6; i++) {
+      run(r, 1, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity, stance }, ARENA)
+      if (i % 60 === 59 && ARENA.h - r.head.y > 40) ticks++
+    }
+    return ticks
+  }
+
+  assert.equal(standFor(0.35), 6, 'with the muscles on he stays on his feet')
+  assert.ok(standFor(0) < 5, 'without them he topples, as a pure ragdoll does')
+
+  // in the air the muscles let go: the flight is the same either way
+  const flight = (stance) => {
+    const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
+    const x0 = r.head.x
+    for (let i = 0; i < 60 * 3; i++) {
+      run(r, 1, { thrustX: DEFAULTS.thrust, thrustY: 0, gravity: 0, stance }, ARENA)
+    }
+    return r.head.x - x0
+  }
+  const off = flight(0)
+  const on = flight(1)
+  assert.ok(off > 300, `a pure ragdoll flies (${off.toFixed(0)} px)`)
+  assert.ok(Math.abs(on - off) / off < 0.05, `and the stance does not change it (${on.toFixed(0)} px)`)
+})
+
 test('gravity pulls the body down; zero gravity does not', () => {
   const falling = new Ragdoll(2000, 2000)
   const y0 = falling.center().y
