@@ -2,7 +2,14 @@
 // they live in a single file (see tests/helpers.mjs).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { installDom, labelWorld, loadModules, hudProfile, strokes, verticalPositions } from './helpers.mjs'
+import {
+  hudFps,
+  hudProfile,
+  installDom,
+  loadModules,
+  strokes,
+  verticalPositions,
+} from './helpers.mjs'
 
 const dom = installDom({ width: 1000, height: 600 })
 
@@ -11,15 +18,19 @@ const { mods, close } = await loadModules([ENGINE, '/src/main.ts'])
 const { Engine } = mods[ENGINE]
 test.after(close)
 
+/** The running game, exposed by main.ts as a debug hook. */
+const game = () => globalThis.__projectx
+const scene = () => game().scene
+
 function fakeScene() {
   const seen = { updates: [], renders: [] }
   return {
     seen,
-    update(dt, game) {
-      seen.updates.push({ dt, game })
+    update(dt, g) {
+      seen.updates.push({ dt, game: g })
     },
-    render(game) {
-      seen.renders.push(game)
+    render(g) {
+      seen.renders.push(g)
     },
   }
 }
@@ -31,10 +42,10 @@ function fakeScene() {
 /** Creates an engine and guarantees it is stopped even if a test fails, so a
  *  stray queued frame can never leak into the admin-panel tests below. */
 function engineFor(t, options = {}) {
-  const scene = fakeScene()
-  const engine = new Engine(dom.canvas, scene, options)
+  const s = fakeScene()
+  const engine = new Engine(dom.canvas, s, options)
   t.after(() => engine.stop())
-  return { scene, engine }
+  return { scene: s, engine }
 }
 
 test('the canvas is allocated at BUFFER_SCALE and scaled to the window (aspect kept)', (t) => {
@@ -74,47 +85,46 @@ test('render quality can be lowered to the virtual resolution at runtime', (t) =
     'back to 2x',
   )
 
-  // clamps to sane values
   engine.setBufferScale(0)
-  assert.equal(dom.canvas.width, 320)
+  assert.equal(dom.canvas.width, 320, 'clamps to sane values')
   engine.setBufferScale(2)
 })
 
 test('default virtual resolution is 320x180', (t) => {
-  const { scene, engine } = engineFor(t)
+  const { scene: s, engine } = engineFor(t)
   engine.start()
   dom.runFrame(performance.now() + 16)
-  assert.equal(scene.seen.updates[0].game.width, 320)
-  assert.equal(scene.seen.updates[0].game.height, 180)
+  assert.equal(s.seen.updates[0].game.width, 320)
+  assert.equal(s.seen.updates[0].game.height, 180)
 })
 
 test('every frame sets the buffer transform and passes the context to the scene', (t) => {
-  const { scene, engine } = engineFor(t, { width: 320, height: 180 })
+  const { scene: s, engine } = engineFor(t, { width: 320, height: 180 })
   const t0 = performance.now()
   engine.start()
 
   dom.calls.length = 0
   dom.runFrame(t0 + 16.7)
 
-  assert.equal(scene.seen.updates.length, 1)
-  assert.equal(scene.seen.renders.length, 1)
-  const { dt, game } = scene.seen.updates[0]
+  assert.equal(s.seen.updates.length, 1)
+  assert.equal(s.seen.renders.length, 1)
+  const { dt, game: ctxGame } = s.seen.updates[0]
   assert.ok(Math.abs(dt - 0.0167) < 5e-4, `dt was ${dt}`)
-  assert.equal(game.ctx, dom.ctx)
-  assert.equal(game.input, scene.seen.renders[0].input)
+  assert.equal(ctxGame.ctx, dom.ctx)
+  assert.equal(ctxGame.input, s.seen.renders[0].input)
 
   const transform = dom.calls.find((c) => c.op === 'setTransform')
   assert.deepEqual(transform?.args, [2, 0, 0, 2, 0, 0])
 })
 
-test('a long pause (tab switch) is clamped so the label cannot teleport', (t) => {
-  const { scene, engine } = engineFor(t, { width: 320, height: 180 })
+test('a long pause (tab switch) is clamped so the character cannot teleport', (t) => {
+  const { scene: s, engine } = engineFor(t, { width: 320, height: 180 })
   const t0 = performance.now()
   engine.start()
 
   dom.runFrame(t0 + 16)
   dom.runFrame(t0 + 5016) // 5 second gap
-  assert.equal(scene.seen.updates[1].dt, 0.1, 'dt is clamped to 100 ms')
+  assert.equal(s.seen.updates[1].dt, 0.1, 'dt is clamped to 100 ms')
 })
 
 test('resizing the window re-fits the canvas', (t) => {
@@ -163,71 +173,112 @@ function frames(n) {
 const draw = () => {
   dom.calls.length = 0
   frame()
-  if (!labelWorld(dom.calls)) {
-    throw new Error('the game scene did not render - a stale engine frame is queued')
+  if (hudFps(dom.calls) === null) {
+    throw new Error('the arena did not render - a stale engine frame is queued')
   }
   return dom.calls
 }
+
 const gradients = (calls) => calls.filter((c) => c.op === 'stroke' && c.style?.kind === 'gradient')
-const label = (calls) => labelWorld(calls)
+const head = () => scene().ragdoll.head
 const hold = (code) => dom.window.dispatch('keydown', { code })
 const releaseKeys = () => {
   hold('ArrowRight') // (no-op if already released)
-  dom.window.dispatch('keyup', { code: 'ArrowRight' })
-  dom.window.dispatch('keyup', { code: 'ArrowLeft' })
+  for (const code of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']) {
+    dom.window.dispatch('keyup', { code })
+  }
 }
 const setSlider = (sel, value) => {
   el(sel).value = value
   el(sel).dispatch('input')
 }
+const setCheckbox = (sel, checked) => {
+  el(sel).checked = checked
+  el(sel).dispatch('change')
+}
+/** Manual control, no demo autopilot, fresh body at the field centre. */
+function manual(gravity = '0', thrust = '1900') {
+  releaseKeys()
+  setCheckbox('#s-auto', false)
+  setSlider('#s-gravity', gravity)
+  setSlider('#s-thrust', thrust)
+  scene().respawn()
+}
 
 test('admin panel', async (t) => {
   await t.test('outputs start from the default settings', () => {
-    assert.equal(el('#o-speed').textContent, '120')
+    assert.equal(el('#o-thrust').textContent, '1900')
+    assert.equal(el('#o-elastic').textContent, '100 %')
+    assert.equal(el('#o-gravity').textContent, '180')
     assert.equal(el('#o-color').textContent, '1.0')
     assert.equal(el('#o-size').textContent, '3 × 2')
     assert.equal(el('#o-cell').textContent, '120')
+    assert.equal(el('#o-body').textContent, '85 %')
     assert.equal(el('#admin-panel').classList.contains('hidden'), true)
   })
 
-  await t.test('arrow keys drive the label, the speed slider rescales it', () => {
-    releaseKeys()
-    setSlider('#s-speed', '120')
+  await t.test('arrow keys are the thrust vector, the slider scales it', () => {
+    manual('0', '600')
+    const x0 = head().x
     hold('ArrowRight')
-
-    const start = label(draw()).x
-    frames(10)
-    const slow = label(dom.calls).x - start
-    assert.ok(Math.abs(slow - 20) < 1e-6, `120 px/s for 10 frames = 20 px, got ${slow}`)
-
-    setSlider('#s-speed', '360')
-    assert.equal(el('#o-speed').textContent, '360')
-
-    const start2 = label(draw()).x
-    frames(10)
-    const fast = label(dom.calls).x - start2
-    assert.ok(Math.abs(fast - 60) < 1e-6, `360 px/s for 10 frames = 60 px, got ${fast}`)
+    frames(60)
     releaseKeys()
+    const low = head().x - x0
+    assert.ok(low > 5, `thrust moves the body (${low.toFixed(1)} px)`)
+
+    setSlider('#s-thrust', '1800')
+    const x1 = head().x
+    hold('ArrowRight')
+    frames(60)
+    releaseKeys()
+    const high = head().x - x1
+    assert.ok(high > low * 2, `tripling the thrust moves much further (${low.toFixed(1)} -> ${high.toFixed(1)})`)
+  })
+
+  await t.test('gravity slider changes the fall', () => {
+    manual('0', '200')
+    const y0 = head().y
+    frames(60)
+    const none = head().y - y0
+    assert.ok(Math.abs(none) < 1, `no fall without gravity (${none.toFixed(2)})`)
+
+    setSlider('#s-gravity', '1000')
+    const y1 = head().y
+    frames(30)
+    const strong = head().y - y1
+    assert.ok(strong > 5, `falls with gravity (${strong.toFixed(1)})`)
+  })
+
+  await t.test('auto-pilot checkbox starts and stops the demo flight', () => {
+    manual('0', '900')
+    const p0 = { x: head().x, y: head().y }
+    frames(60)
+    const idle = Math.hypot(head().x - p0.x, head().y - p0.y)
+    assert.ok(idle < 1, `no motion while idle (${idle.toFixed(2)} px)`)
+
+    setCheckbox('#s-auto', true)
+    frames(60)
+    const flown = Math.hypot(head().x - p0.x, head().y - p0.y)
+    assert.ok(flown > 5, `autopilot flies the ragdoll (${flown.toFixed(1)} px)`)
+
+    setCheckbox('#s-auto', false)
   })
 
   await t.test('colour and field-size sliders update settings and outputs', () => {
-    releaseKeys()
     setSlider('#s-color', '2.5')
     assert.equal(el('#o-color').textContent, '2.5')
 
     setSlider('#s-size', '6')
     assert.equal(el('#o-size').textContent, '6 × 4')
+    draw() // let the scene pick the new settings up
+    assert.equal(scene().worldW, 1920, 'the field really grew')
 
-    // the field really grew: the label can now travel past the old wall
-    setSlider('#s-speed', '360')
-    hold('ArrowRight')
-    frames(200)
-    releaseKeys()
-    assert.ok(label(dom.calls).x > 960, `label at ${label(dom.calls).x} should pass the 3-screen wall`)
+    setSlider('#s-size', '3')
+    draw()
+    assert.equal(scene().worldW, 960)
   })
 
   await t.test('cell size slider changes the lattice density', () => {
-    releaseKeys()
     setSlider('#s-size', '3')
     setSlider('#s-cell', '120')
     const count = () => verticalPositions(draw()).length
@@ -238,43 +289,16 @@ test('admin panel', async (t) => {
     const sparse = count()
 
     assert.ok(sparse < dense, `bigger cells mean fewer lines: ${dense} -> ${sparse}`)
-  })
-
-  await t.test('auto-move checkbox starts and stops the drift', () => {
-    releaseKeys()
-    setSlider('#s-speed', '120')
-
-    // park the label against the left wall (deterministic starting point)
-    hold('ArrowLeft')
-    frames(600) // 120 px/s for 10 s = 1200 px, more than the widest field
-    releaseKeys()
-    const before = label(draw()).x
-    assert.equal(before, 0, 'label parked at the left wall')
-
-    frames(10)
-    assert.equal(label(dom.calls).x, before, 'no drift while unchecked')
-
-    el('#s-auto').checked = true
-    el('#s-auto').dispatch('change')
-    frames(10)
-    assert.ok(label(dom.calls).x > before, 'drift starts when checked')
-
-    el('#s-auto').checked = false
-    el('#s-auto').dispatch('change')
-    const parked = label(draw()).x
-    frames(10)
-    assert.equal(label(dom.calls).x, parked, 'drift stops when unchecked')
+    setSlider('#s-cell', '120')
   })
 
   await t.test('grid checkbox switches the 3D lattice off and on', () => {
-    el('#s-grid').checked = false
-    el('#s-grid').dispatch('change')
+    setCheckbox('#s-grid', false)
     const off = draw()
     assert.equal(gradients(off).length, 0)
     const offStrokes = strokes(off).length
 
-    el('#s-grid').checked = true
-    el('#s-grid').dispatch('change')
+    setCheckbox('#s-grid', true)
     const on = draw()
     assert.ok(gradients(on).length > 0)
     assert.ok(strokes(on).length > offStrokes * 2)
@@ -282,33 +306,29 @@ test('admin panel', async (t) => {
 
   await t.test('quality checkbox switches the render buffer between 2x and 1x', () => {
     assert.equal(dom.canvas.width, 640, 'starts smooth')
-    el('#s-quality').checked = false
-    el('#s-quality').dispatch('change')
+    setCheckbox('#s-quality', false)
     assert.equal(dom.canvas.width, 320, 'unchecked renders at the virtual resolution')
     assert.equal(dom.canvas.height, 180)
 
-    el('#s-quality').checked = true
-    el('#s-quality').dispatch('change')
+    setCheckbox('#s-quality', true)
     assert.equal(dom.canvas.width, 640, 'checked restores the 2x buffer')
   })
 
   await t.test('profiler checkbox adds the frame-time breakdown to the HUD', () => {
     assert.equal(hudProfile(draw()), null, 'no breakdown by default')
 
-    el('#s-profiler').checked = true
-    el('#s-profiler').dispatch('change')
+    setCheckbox('#s-profiler', true)
     const profile = hudProfile(draw())
     assert.ok(profile, 'breakdown appears')
     assert.ok(profile.draw >= 0 && profile.update >= 0)
 
-    el('#s-profiler').checked = false
-    el('#s-profiler').dispatch('change')
+    setCheckbox('#s-profiler', false)
     assert.equal(hudProfile(draw()), null, 'breakdown disappears again')
   })
 
   await t.test('editing a control hands the keyboard back to the game', () => {
-    el('#s-speed').focus()
-    assert.equal(dom.document.activeElement, el('#s-speed'))
+    el('#s-thrust').focus()
+    assert.equal(dom.document.activeElement, el('#s-thrust'))
     el('#admin-panel').dispatch('change')
     assert.equal(dom.document.activeElement, dom.document.body, 'focus returns to the page')
 

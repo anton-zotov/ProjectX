@@ -1,15 +1,11 @@
 import './style.css'
 import { Engine } from './engine'
-import {
-  HelloWorldScene,
-  defaultSettings,
-  type GameSettings,
-} from './scenes/helloWorld'
+import { ArenaScene, defaultSettings, type GameSettings } from './scenes/arena'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!
 
 const settings: GameSettings = defaultSettings()
-const scene = new HelloWorldScene(settings)
+const scene = new ArenaScene(settings)
 
 const engine = new Engine(canvas, scene, {
   width: 320,
@@ -18,6 +14,9 @@ const engine = new Engine(canvas, scene, {
 
 setupAdminPanel(settings, engine)
 engine.start()
+
+// Debug hook: handy in the browser console and for the tests.
+;(globalThis as unknown as Record<string, unknown>)['__projectx'] = { settings, scene, engine }
 
 /* ------------------------------------------------------------------ *
  *  Collapsible admin panel
@@ -46,7 +45,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   panel.addEventListener('pointerup', releasePointer)
   panel.addEventListener('pointercancel', releasePointer)
 
-  // any committed change (checkbox, select, slider release, keyboard step)
+  // any committed change (checkbox, slider release, keyboard step)
   // moves the focus back to the page -> arrows play the game afterwards
   for (const type of ['input', 'change', 'click'] as const) {
     panel.addEventListener(type, () => {
@@ -54,25 +53,35 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
     })
   }
 
-  const speed = document.querySelector<HTMLInputElement>('#s-speed')!
-  const oSpeed = document.querySelector<HTMLOutputElement>('#o-speed')!
+  const thrust = document.querySelector<HTMLInputElement>('#s-thrust')!
+  const oThrust = document.querySelector<HTMLOutputElement>('#o-thrust')!
+  const elastic = document.querySelector<HTMLInputElement>('#s-elastic')!
+  const oElastic = document.querySelector<HTMLOutputElement>('#o-elastic')!
+  const gravity = document.querySelector<HTMLInputElement>('#s-gravity')!
+  const oGravity = document.querySelector<HTMLOutputElement>('#o-gravity')!
   const auto = document.querySelector<HTMLInputElement>('#s-auto')!
   const color = document.querySelector<HTMLInputElement>('#s-color')!
   const oColor = document.querySelector<HTMLOutputElement>('#o-color')!
   const size = document.querySelector<HTMLInputElement>('#s-size')!
   const oSize = document.querySelector<HTMLOutputElement>('#o-size')!
+  const body = document.querySelector<HTMLInputElement>('#s-body')!
+  const oBody = document.querySelector<HTMLOutputElement>('#o-body')!
   const cell = document.querySelector<HTMLInputElement>('#s-cell')!
   const oCell = document.querySelector<HTMLOutputElement>('#o-cell')!
   const grid = document.querySelector<HTMLInputElement>('#s-grid')!
+  const skeleton = document.querySelector<HTMLInputElement>('#s-skeleton')!
   const quality = document.querySelector<HTMLInputElement>('#s-quality')!
   const profiler = document.querySelector<HTMLInputElement>('#s-profiler')!
 
   const syncOutputs = (): void => {
-    oSpeed.textContent = String(s.speed)
+    oThrust.textContent = String(s.thrust)
+    oGravity.textContent = String(s.gravity)
+    oElastic.textContent = `${Math.round(s.elasticity * 100)} %`
     oColor.textContent = s.colorSpeed.toFixed(1)
     const h = Math.round(s.fieldScreens * (2 / 3) * 10) / 10
     oSize.textContent = `${s.fieldScreens} × ${h}`
     oCell.textContent = String(s.cell)
+    oBody.textContent = `${Math.round(s.bodyScale * 100)} %`
   }
 
   toggle.addEventListener('click', () => {
@@ -81,12 +90,21 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
     blurActive()
   })
 
-  speed.addEventListener('input', () => {
-    s.speed = Number(speed.value)
+  thrust.addEventListener('input', () => {
+    s.thrust = Number(thrust.value)
+    syncOutputs()
+  })
+  // how rubbery the whole frame is: it applies at once, mid-flight
+  elastic.addEventListener('input', () => {
+    s.elasticity = Number(elastic.value)
+    syncOutputs()
+  })
+  gravity.addEventListener('input', () => {
+    s.gravity = Number(gravity.value)
     syncOutputs()
   })
   auto.addEventListener('change', () => {
-    s.autoMove = auto.checked
+    s.autoPilot = auto.checked
   })
   color.addEventListener('input', () => {
     s.colorSpeed = Number(color.value)
@@ -100,8 +118,17 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
     s.cell = Number(cell.value)
     syncOutputs()
   })
+  // size of the character itself (the arena rebuilds the body on change)
+  body.addEventListener('input', () => {
+    s.bodyScale = Number(body.value)
+    syncOutputs()
+  })
   grid.addEventListener('change', () => {
     s.showGrid = grid.checked
+  })
+  // tuning view: paint the circles of the skeleton over the drawn body
+  skeleton.addEventListener('change', () => {
+    s.showSkeleton = skeleton.checked
   })
   // render quality: 2x buffer is smoother, 1x is ~4x cheaper for the GPU
   quality.addEventListener('change', () => {

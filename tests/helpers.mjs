@@ -74,6 +74,8 @@ export function mockCtx() {
     beginPath: () => {
       path = []
     },
+    closePath: () => path.push(['Z']),
+    arc: (x, y, r, a0, a1) => path.push(['A', x, y, r, a0, a1]),
     moveTo: (x, y) => path.push(['M', x, y]),
     lineTo: (x, y) => path.push(['L', x, y]),
     stroke: () =>
@@ -133,38 +135,31 @@ export const horizontalPositions = (calls) => [
   ...new Set(segments(calls).filter(isHorizontal).map((s) => s.y0)),
 ].sort((a, b) => a - b)
 
-/** Diagonal strokes = the axial "rails" (two strokes per rail: halo + core). */
+/**
+ * Diagonal strokes painted with a gradient - i.e. the axial "rails".
+ * (The ragdoll's bones are diagonal too, but they use flat colours.)
+ */
 export const railSegments = (calls) =>
-  segments(calls).filter((s) => !isVertical(s) && !isHorizontal(s))
+  segments(calls).filter((s) => s.style?.kind === 'gradient' && !isVertical(s) && !isHorizontal(s))
 
-/** World position of the label, taken from its fillText call. */
-export function labelWorld(calls) {
-  for (let i = calls.length - 1; i >= 0; i--) {
-    const c = calls[i]
-    if (c.op === 'fillText' && c.text === 'Hello, World!') {
-      return { x: c.args[0], y: c.args[1] + 5 }
-    }
-  }
-  return null
-}
-
-/** Camera offset implied by the world->screen translate before the label. */
+/**
+ * Camera offset of a frame: the arena draws the frame and the ragdoll inside
+ * a world->screen translate, so the last translate is the camera.
+ */
 export function cameraOffset(calls) {
-  let labelIndex = -1
   for (let i = calls.length - 1; i >= 0; i--) {
     const c = calls[i]
-    if (c.op === 'fillText' && c.text === 'Hello, World!') {
-      labelIndex = i
-      break
-    }
-  }
-  for (let i = labelIndex; i >= 0; i--) {
-    if (calls[i].op === 'translate') {
-      return { camX: -calls[i].args[0], camY: -calls[i].args[1] }
-    }
+    if (c.op === 'translate') return { camX: -c.args[0], camY: -c.args[1] }
   }
   return null
 }
+
+/** All `fill` calls of a frame (used to find the drawn body parts). */
+export const fills = (calls) => calls.filter((c) => c.op === 'fill')
+
+/** Strokes painted with a given colour. */
+export const strokesWith = (calls, style) =>
+  strokes(calls).filter((c) => c.style === style)
 
 /** FPS number from the HUD line ("fps 60  16.4 ms"). */
 export const hudFps = (calls) => {
@@ -285,8 +280,12 @@ export function installDom({ width = 1000, height = 600 } = {}) {
     '#game': canvas,
     '#admin-toggle': makeElement('button', { textContent: '⚙' }),
     '#admin-panel': makeElement('div'),
-    '#s-speed': makeElement('input', { value: '120' }),
-    '#o-speed': makeElement('output'),
+    '#s-thrust': makeElement('input', { value: '1900' }),
+    '#o-thrust': makeElement('output'),
+    '#s-elastic': makeElement('input', { value: '1' }),
+    '#o-elastic': makeElement('output'),
+    '#s-gravity': makeElement('input', { value: '180' }),
+    '#o-gravity': makeElement('output'),
     '#s-auto': makeElement('input', { type: 'checkbox', checked: false }),
     '#s-color': makeElement('input', { value: '1' }),
     '#o-color': makeElement('output'),
@@ -294,7 +293,10 @@ export function installDom({ width = 1000, height = 600 } = {}) {
     '#o-size': makeElement('output'),
     '#s-cell': makeElement('input', { value: '120' }),
     '#o-cell': makeElement('output'),
+    '#s-body': makeElement('input', { value: '0.85' }),
+    '#o-body': makeElement('output'),
     '#s-grid': makeElement('input', { type: 'checkbox', checked: true }),
+    '#s-skeleton': makeElement('input', { type: 'checkbox', checked: true }),
     '#s-quality': makeElement('input', { type: 'checkbox', checked: true }),
     '#s-profiler': makeElement('input', { type: 'checkbox', checked: false }),
   }

@@ -1,4 +1,6 @@
 import type { GameContext, Scene } from '../scene'
+import { BODY, DEFAULTS, SIM } from '../game/config'
+import { Ragdoll } from '../game/ragdoll'
 
 /* ------------------------------------------------------------------ *
  *  Screen / field geometry
@@ -9,35 +11,38 @@ const VIEW_H = 180
 /** Field height = width * 3/8: 3 screens wide, 2 screens tall. */
 const FIELD_RATIO = 3 / 8
 
-/** Label collision box (world px). */
-const LABEL_W = 80
-const LABEL_H = 12
-
-const SPEED_DEFAULT = 120 // world px/s
-const SPEED_MIN = 10
 const CELL_MIN = 30
+const THRUST_MIN = 50
 
 /* ------------------------------------------------------------------ *
  *  Settings (mirrored in the admin panel)
  * ------------------------------------------------------------------ */
 export interface GameSettings {
-  speed: number // label speed while steering / auto-moving, world px/s
-  autoMove: boolean // label drifts/bounces on its own when no arrows
-  colorSpeed: number // how fast colours flow (0 = static)
+  thrust: number // px/s^2 applied at the head
+  gravity: number // px/s^2, low by default ("moon" feel)
+  autoPilot: boolean // demo controller flies the ragdoll on its own
+  colorSpeed: number // how fast the background colours flow (0 = static)
   fieldScreens: number // field width in "screens" (320 px each)
   cell: number // background lattice spacing (world px, horizontal)
   showGrid: boolean // render the 3D lattice
-  profiler: boolean // show frame timings in the HUD (diagnostics)
+  profiler: boolean // show frame timings in the HUD
+  bodyScale: number // size of the character (skeleton scale)
+  showSkeleton: boolean // paint the circles over the body (tuning view)
+  elasticity: number // how rubbery the frame is (1 = the tuned default)
 }
 
 export const defaultSettings = (): GameSettings => ({
-  speed: SPEED_DEFAULT,
-  autoMove: false,
+  thrust: DEFAULTS.thrust,
+  gravity: DEFAULTS.gravity,
+  autoPilot: false, // the demo flies him; off by default, so no input = he falls
   colorSpeed: 1,
   fieldScreens: 3,
   cell: 120,
   showGrid: true,
   profiler: false,
+  bodyScale: BODY.scale,
+  showSkeleton: true,
+  elasticity: 1,
 })
 
 /* ------------------------------------------------------------------ *
@@ -47,12 +52,12 @@ export const defaultSettings = (): GameSettings => ({
  *  plane itself, smaller = deeper).  Every level draws full-window
  *  transverse lines (vertical + horizontal); they get thinner and dimmer
  *  with depth.  Levels are drawn near -> far and a line that would land
- *  within DEDUPE_PX of an already drawn one is skipped, so stacked
- *  levels never add up into a brighter line.
+ *  within DEDUPE_PX of an already drawn one is skipped, so stacked levels
+ *  never add up into a brighter line.
  *
  *  "Rails" are the lines running away from the viewer: they start at the
- *  lattice nodes near the camera and converge toward the far level, with
- *  a distance fade so they slide in and out instead of popping.
+ *  lattice nodes near the camera and converge toward the far level, with a
+ *  distance fade so they slide in and out instead of popping.
  * ------------------------------------------------------------------ */
 const KS = [0.92, 0.8, 0.67, 0.54, 0.41, 0.3, 0.2, 0.12, 0.07]
 const K0 = KS[0]
@@ -66,6 +71,21 @@ const RAIL_FADE_SPAN = 440 // px over which a rail fades out
 const RAIL_FADE_MIN = 0.03 // below this a rail is skipped entirely
 const RAIL_MIN_DIST = 28 // world px from the camera below which rails degenerate
 
+/* --- the ragdoll's look ------------------------------------------- *
+ *  The skeleton is a chain of circles (see ragdoll.ts). What is drawn on
+ *  top of it is deliberately dumb: a capsule between every pair of linked
+ *  circles plus the circles themselves. The capsule fills the gap and the
+ *  joint, so a chain of circles reads as one smooth oval limb instead of
+ *  beads - exactly what the original does with its rectangles.
+ *
+ *  While the frame is being tuned, the circles are painted in their own
+ *  colour on top (settings.showSkeleton), so it is obvious where the
+ *  skeleton is and where the drawn body merely covers it.
+ * ------------------------------------------------------------------ */
+const BODY_COLOR = BODY.color
+/** Colour of the circles when the skeleton is shown (testing view). */
+const SKELETON_COLOR = '#9aa4ad'
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
 const hsla = (h: number, s: number, l: number, a: number) =>
@@ -77,21 +97,25 @@ const tooClose = (list: number[], v: number): boolean => {
   return false
 }
 
-export class HelloWorldScene implements Scene {
+export class ArenaScene implements Scene {
   private settings: GameSettings
 
-  private x: number
-  private y: number
-  private vx: number
-  private vy: number
+  /** The player character (stage 1: a single ragdoll). */
+  ragdoll: Ragdoll
 
   /* Derived from settings by syncSettings() (called from the constructor). */
-  private worldW!: number
-  private worldH!: number
+  worldW!: number
+  worldH!: number
   private cellX!: number // horizontal lattice spacing (world px)
   private cellY!: number // vertical lattice spacing (cellX * 3/4)
 
+  /* Camera follows the ragdoll's head; public so tests can read it. */
+  camX = 0
+  camY = 0
+
   private colorTime = 0 // drives the colour flow (settings.colorSpeed scales dt)
+  private simTime = 0 // accumulated simulated time (deterministic)
+  private simAcc = 0 // fixed-step accumulator
   private fps = 60
   private fpsAcc = 0
   private fpsFrames = 0
@@ -102,24 +126,39 @@ export class HelloWorldScene implements Scene {
   private frameMs = 0
   private frameStart = 0
 
-  /* Free camera, centred on the label (may look beyond the field edges). */
-  private camX = 0
-  private camY = 0
-
   /* Reused scratch lists: screen positions already painted this frame. */
   private readonly drawnV: number[] = []
   private readonly drawnH: number[] = []
+  /** Body scale the current ragdoll was built with (see buildBody). */
+  private builtScale = 0
+  /** Elasticity the current ragdoll was last told about. */
+  private builtElasticity = 0
 
   constructor(settings: GameSettings) {
     this.settings = settings
     this.syncSettings()
 
-    this.x = this.worldW / 2
-    this.y = this.worldH / 2
+    // spawn in the middle of the field, upright
+    this.ragdoll = this.buildBody()
+    this.camX = this.ragdoll.head.x - VIEW_W / 2
+    this.camY = this.ragdoll.head.y - VIEW_H / 2
+  }
 
-    const speed = Math.max(SPEED_MIN, settings.speed)
-    this.vx = speed
-    this.vy = speed * 0.7
+  /** Respawn the character in the middle of the field (fresh, at rest). */
+  respawn(): void {
+    this.ragdoll = this.buildBody()
+    this.simAcc = 0
+    this.camX = this.ragdoll.head.x - VIEW_W / 2
+    this.camY = this.ragdoll.head.y - VIEW_H / 2
+  }
+
+  /** A fresh body in the middle of the field, with the current body scale. */
+  private buildBody(): Ragdoll {
+    this.builtScale = this.settings.bodyScale
+    this.builtElasticity = this.settings.elasticity
+    const body = new Ragdoll(this.worldW / 2, this.worldH / 2, this.settings.bodyScale)
+    body.setElasticity(this.settings.elasticity)
+    return body
   }
 
   /** Pull the admin-panel settings into the derived geometry. */
@@ -151,6 +190,13 @@ export class HelloWorldScene implements Scene {
 
   private step(dt: number, game: GameContext): void {
     this.syncSettings()
+    // the body scale is geometry, not a live parameter: rebuild the ragdoll
+    if (this.builtScale !== this.settings.bodyScale) this.respawn()
+    // the elasticity is live: dragging the slider is felt at once
+    if (this.builtElasticity !== this.settings.elasticity) {
+      this.builtElasticity = this.settings.elasticity
+      this.ragdoll.setElasticity(this.settings.elasticity)
+    }
     this.colorTime += dt * this.settings.colorSpeed
 
     // fps (smoothed over ~0.5 s)
@@ -162,38 +208,54 @@ export class HelloWorldScene implements Scene {
       this.fpsFrames = 0
     }
 
+    // --- the only thing a player controls: the thrust vector -------------
+    const thrust = Math.max(THRUST_MIN, this.settings.thrust)
     const ax = game.input.axis('ArrowLeft', 'ArrowRight')
     const ay = game.input.axis('ArrowUp', 'ArrowDown')
-    const speed = Math.max(SPEED_MIN, this.settings.speed)
+    let tx = 0
+    let ty = 0
 
     if (ax !== 0 || ay !== 0) {
-      this.x += ax * speed * dt
-      this.y += ay * speed * dt
-      this.vx = speed
-      this.vy = speed * 0.7
-    } else if (this.settings.autoMove) {
-      // auto-drift: keep the direction, follow the "speed" setting
-      const dir = Math.hypot(this.vx, this.vy)
-      if (dir > 0) {
-        this.vx = (this.vx / dir) * speed
-        this.vy = (this.vy / dir) * speed
-      }
-      this.x += this.vx * dt
-      this.y += this.vy * dt
+      const len = Math.hypot(ax, ay) || 1
+      tx = (ax / len) * thrust
+      ty = (ay / len) * thrust
+    } else if (this.settings.autoPilot) {
+      const target = this.autoPilotTarget()
+      const head = this.ragdoll.head
+      const dx = target.x - head.x
+      const dy = target.y - head.y
+      const len = Math.hypot(dx, dy) || 1
+      tx = (dx / len) * thrust
+      ty = (dy / len) * thrust
     }
 
-    // keep the label inside the field (bounce when it steers into a wall)
-    if (this.x < 0 || this.x + LABEL_W > this.worldW) {
-      this.vx *= -1
-      this.x = clamp(this.x, 0, this.worldW - LABEL_W)
+    // --- fixed-step simulation (independent of the frame rate) -----------
+    this.simAcc += dt
+    let steps = 0
+    while (this.simAcc >= SIM.dt && steps < SIM.maxStepsPerFrame) {
+      this.ragdoll.step(
+        SIM.dt,
+        { thrustX: tx, thrustY: ty, gravity: this.settings.gravity },
+        { w: this.worldW, h: this.worldH },
+      )
+      this.simAcc -= SIM.dt
+      this.simTime += SIM.dt
+      steps++
     }
-    if (this.y < LABEL_H || this.y > this.worldH) {
-      this.vy *= -1
-      this.y = clamp(this.y, LABEL_H, this.worldH)
-    }
+    if (steps >= SIM.maxStepsPerFrame) this.simAcc = 0 // drop the backlog
 
-    this.camX = this.x - VIEW_W / 2
-    this.camY = this.y - VIEW_H / 2
+    // --- camera on the head ---------------------------------------------
+    this.camX = this.ragdoll.head.x - VIEW_W / 2
+    this.camY = this.ragdoll.head.y - VIEW_H / 2
+  }
+
+  /** Deterministic wander target for the demo autopilot. */
+  private autoPilotTarget(): { x: number; y: number } {
+    const t = this.simTime
+    return {
+      x: this.worldW / 2 + Math.cos(t * 0.37) * this.worldW * 0.3,
+      y: this.worldH / 2 + Math.sin(t * 0.53) * this.worldH * 0.3,
+    }
   }
 
   render({ ctx }: GameContext): void {
@@ -204,6 +266,7 @@ export class HelloWorldScene implements Scene {
 
     if (this.settings.showGrid) this.renderSpace(ctx)
     this.renderField(ctx)
+    this.renderRagdoll(ctx)
 
     this.drawMs = this.drawMs * 0.9 + (performance.now() - t0) * 0.1
     if (this.frameStart > 0) {
@@ -226,7 +289,54 @@ export class HelloWorldScene implements Scene {
     }
     ctx.textBaseline = 'middle'
     ctx.fillStyle = 'rgba(125,154,140,0.9)'
-    ctx.fillText('arrow keys to move', 6, VIEW_H - 8)
+    ctx.fillText('стрелки — тяга', 6, VIEW_H - 8)
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  The ragdoll itself
+   * ------------------------------------------------------------------ */
+  private renderRagdoll(ctx: CanvasRenderingContext2D): void {
+    const r = this.ragdoll
+
+    ctx.save()
+    ctx.translate(-this.camX, -this.camY)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+
+    // 1. the "rectangles" that hide the circles: one capsule per link. The
+    //    capsule stops at the edge of any circle that is wider than itself,
+    //    so it can never bulge out of the head and turn it into an oval.
+    ctx.strokeStyle = BODY_COLOR
+    ctx.fillStyle = BODY_COLOR
+    for (const link of r.drawn) {
+      const p1 = r.points[link.a]
+      const p2 = r.points[link.b]
+      const half = link.width / 2
+      const d = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+      if (d < 1e-6) continue
+      const ux = (p2.x - p1.x) / d
+      const uy = (p2.y - p1.y) / d
+      const cut1 = p1.r > half + 0.01 ? p1.r : 0
+      const cut2 = p2.r > half + 0.01 ? p2.r : 0
+      if (cut1 + cut2 >= d) continue
+
+      ctx.lineWidth = link.width
+      ctx.beginPath()
+      ctx.moveTo(p1.x + ux * cut1, p1.y + uy * cut1)
+      ctx.lineTo(p2.x - ux * cut2, p2.y - uy * cut2)
+      ctx.stroke()
+    }
+
+    // 2. the circles: round ends, a round head, and (while tuning) the
+    //    skeleton itself in a colour of its own
+    ctx.fillStyle = this.settings.showSkeleton ? SKELETON_COLOR : BODY_COLOR
+    for (const p of r.points) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.restore()
   }
 
   /* ------------------------------------------------------------------ *
@@ -320,7 +430,7 @@ export class HelloWorldScene implements Scene {
   }
 
   /* ------------------------------------------------------------------ *
-   *  Arena plane: glass "hole" + opaque wall (sheet) + frame + label
+   *  Arena plane: glass "hole" + opaque wall (sheet) + frame
    * ------------------------------------------------------------------ */
   private renderField(ctx: CanvasRenderingContext2D): void {
     const { camX, camY } = this
@@ -418,17 +528,6 @@ export class HelloWorldScene implements Scene {
       ctx.lineTo(w - 5, ty)
     }
     ctx.stroke()
-
-    // --- the label ---
-    const hue = this.lineHue(this.x, this.y)
-    ctx.save()
-    ctx.shadowColor = hsla(hue, 90, 55, 0.9)
-    ctx.shadowBlur = 6
-    ctx.font = '10px monospace'
-    ctx.textBaseline = 'middle'
-    ctx.fillStyle = hsla(hue, 95, 90, 1)
-    ctx.fillText('Hello, World!', this.x, this.y - 5)
-    ctx.restore()
 
     ctx.restore()
   }
