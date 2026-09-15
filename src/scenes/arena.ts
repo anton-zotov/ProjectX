@@ -44,7 +44,7 @@ export const defaultSettings = (): GameSettings => ({
   bodyScale: BODY.scale,
   showSkeleton: true,
   elasticity: 1,
-  stance: 0.35, // stands and stays calm, yet still moves and launches normally
+  stance: 0, // pure, universal ragdoll physics; the muscles are an experiment (see docs/VISION.md)
 })
 
 /* ------------------------------------------------------------------ *

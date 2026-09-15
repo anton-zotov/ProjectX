@@ -428,20 +428,15 @@ export class Ragdoll {
    * and keep it on its feet; links alone cannot, because they never say which
    * way is up.
    *
-   * `stance` comes from the admin slider (0 = pure ragdoll). The pull only
-   * works while the feet are near the floor, so flying and tumbling stay as
-   * they were.
+   * `stance` comes from the admin slider (0 = pure ragdoll). The pull is the
+   * same everywhere: no special rules near the floor.
    */
   private stand(stance: number, dt: number, bounds: Bounds): void {
     if (stance <= 0) return
-    let gap = Infinity
-    for (const p of this.points) gap = Math.min(gap, bounds.h - (p.y + p.r))
-    if (gap >= STAND.reach) return
-    const contact = 1 - gap / STAND.reach
 
     const c = this.center()
-    const k = STAND.frequency * stance * contact * dt * dt
-    const damp = STAND.damping * stance * contact
+    const k = STAND.frequency * stance * dt * dt
+    const damp = STAND.damping * stance
 
     // The pull is an internal force: whatever the limbs take, the body gives
     // back, so the frame never pushes itself around.

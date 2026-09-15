@@ -374,7 +374,8 @@ test('the stance gets him up and holds him, and can be switched off', () => {
   assert.equal(standFor(0.35), 6, 'with the muscles on he stays on his feet')
   assert.ok(standFor(0) < 5, 'without them he topples, as a pure ragdoll does')
 
-  // in the air the muscles let go: the flight is the same either way
+  // The muscles are universal: they act in the air as well, so a full stance\r
+  // does cost speed. That trade-off is the open design question.\r
   const flight = (stance) => {
     const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
     const x0 = r.head.x
@@ -385,8 +386,8 @@ test('the stance gets him up and holds him, and can be switched off', () => {
   }
   const off = flight(0)
   const on = flight(1)
-  assert.ok(off > 300, `a pure ragdoll flies (${off.toFixed(0)} px)`)
-  assert.ok(Math.abs(on - off) / off < 0.05, `and the stance does not change it (${on.toFixed(0)} px)`)
+  assert.ok(off > 300, `a pure ragdoll flies ( px)`)
+  assert.ok(on < off * 0.5, `the muscles also act in the air ( px vs )`)
 })
 
 test('gravity pulls the body down; zero gravity does not', () => {
@@ -602,7 +603,7 @@ test('the default thrust lifts the frame off the floor', () => {
   const r = onFloor()
   const start = ARENA.h - r.head.y
   for (let i = 0; i < 60; i++) {
-    run(r, 1, { thrustX: 0, thrustY: -DEFAULTS.thrust, gravity: DEFAULTS.gravity, stance: 1 }, ARENA)
+    run(r, 1, { thrustX: 0, thrustY: -DEFAULTS.thrust, gravity: DEFAULTS.gravity, stance: 0 }, ARENA)
   }
   const climbed = ARENA.h - r.head.y - start
   assert.ok(climbed > 20, `one second of thrust lifts it by ${climbed.toFixed(0)} px`)

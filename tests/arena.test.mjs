@@ -75,7 +75,7 @@ test('default settings are the documented ones', () => {
     bodyScale: 0.85,
     showSkeleton: true,
     elasticity: 1,
-    stance: 0.35,
+    stance: 0,
   })
 })
 
