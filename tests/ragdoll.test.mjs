@@ -38,8 +38,170 @@ const wiggle = (thrust) => (i) => ({
   gravity: MOON_GRAVITY,
 })
 
-test('the skeleton is built the original way: 1 + 5 + 4 + 4 + 5 + 5 circles', () => {
-  assert.deepEqual(SECTION_SIZES, {
+/* ------------------------------------------------------------------ *
+ *  THE MAIN RULE OF THE PROJECT: the physics is universal.
+ *
+ *  Whatever we want the character to do, the mechanism that does it must work
+ *  the same EVERYWHERE - no rules about the floor, the walls or how close he is
+ *  to either. To make him stand we invent physics that stands him up; we never
+ *  switch behaviour on because he happens to be near the ground.
+ * ------------------------------------------------------------------ */
+
+/** Rotate one section around its first circle - a limb out of its pose. */
+const tilt = (r, part, angle) => {
+  const names = POINT_NAMES.filter((n) => n.startsWith(part))
+  const anchor = r.point(names[0])
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  for (const name of names) {
+    const p = r.point(name)
+    const dx = p.x - anchor.x
+    const dy = p.y - anchor.y
+    p.x = anchor.x + dx * cos - dy * sin
+    p.y = anchor.y + dx * sin + dy * cos
+    p.px = p.x
+    p.py = p.y
+  }
+}
+
+/** Rotate the WHOLE frame around its centre - he is lying on his side. */
+const spin = (r, angle) => {
+  const c = r.points.reduce(
+    (acc, p) => ({ x: acc.x + p.x / r.points.length, y: acc.y + p.y / r.points.length }),
+    { x: 0, y: 0 },
+  )
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  for (const p of r.points) {
+    const dx = p.x - c.x
+    const dy = p.y - c.y
+    p.x = c.x + dx * cos - dy * sin
+    p.y = c.y + dx * sin + dy * cos
+    p.px = p.x
+    p.py = p.y
+  }
+}
+
+/**
+ * How far the frame is from upright, in radians: the angle of the pelvis->head
+ * axis against the vertical. Only the muscles can change this - the links hold
+ * the SHAPE, but nothing inside the frame knows which way is up.
+ */
+const lean = (r) => {
+  const head = r.points[0]
+  const pelvis = r.point(PELVIS)
+  return Math.abs(Math.atan2(head.x - pelvis.x, pelvis.y - head.y))
+}
+
+/** Every circle's position relative to the centre of mass. */
+const relative = (r) => {
+  let m = 0
+  let cx = 0
+  let cy = 0
+  for (const p of r.points) {
+    const mass = 1 / p.im
+    m += mass
+    cx += p.x * mass
+    cy += p.y * mass
+  }
+  cx /= m
+  cy /= m
+  return r.points.map((p) => ({ x: p.x - cx, y: p.y - cy }))
+}
+
+test('the physics does not know where the floor is (the main rule of the project)', () => {
+  // The very same scenario in two places in the SAME arena: the feet 10 px above
+  // the floor, and 520 px above it. Everything the frame does must be identical
+  // - the only thing allowed to differ is contact itself, and here there is no
+  // contact in either case.
+  const GAP = 10
+  const scenario = (gap, stance) => {
+    const bounds = { w: 4000, h: 700 }
+    const r = new Ragdoll(500, 350)
+    // put the feet exactly `gap` above the floor, then lay him on his side and
+    // throw a limb out of pose: the muscles now have real work to do
+    const lowest = Math.max(...r.points.map((p) => p.y + p.r))
+    const shift = bounds.h - gap - lowest
+    for (const p of r.points) {
+      p.y += shift
+      p.py += shift
+    }
+    r.setJointGrip(0)
+    spin(r, 0.9)
+    tilt(r, 'armL', 1.2)
+    tilt(r, 'legR', -0.9)
+
+    const started = relative(r)
+    for (let i = 0; i < 60 * 2; i++) {
+      run(r, 1, { ...still(NO_GRAVITY), stance }, bounds)
+    }
+    const rel = relative(r)
+    // ...how far the frame actually travelled from where it started
+    let moved = 0
+    for (const [i, p] of rel.entries()) {
+      moved = Math.max(moved, Math.hypot(p.x - started[i].x, p.y - started[i].y))
+    }
+    return {
+      rel,
+      moved,
+      lean: lean(r),
+      above: bounds.h - Math.max(...r.points.map((p) => p.y + p.r)),
+    }
+  }
+
+  // the SAME arena, the same push, the same frame - only the height differs
+  const near = scenario(GAP, 0.35)
+  const far = scenario(520, 0.35)
+
+  // the floor never got in the way in either run: this is a fair comparison
+  assert.ok(near.above > 0.5, `near the floor he never touches it (${near.above.toFixed(1)} px above)`)
+  assert.ok(far.above > 450, `and high above it the floor is ${far.above.toFixed(0)} px away`)
+
+  let worst = 0
+  for (const [i, a] of near.rel.entries()) {
+    worst = Math.max(worst, Math.hypot(a.x - far.rel[i].x, a.y - far.rel[i].y))
+  }
+  assert.ok(
+    worst < 1e-6,
+    `the same scenario gives the same frame near the floor and far from it (worst ${worst.toExponential(1)} px)`,
+  )
+
+  // ...and something really did happen in both runs, or the line above would be
+  // true for a frozen frame as well
+  assert.ok(near.moved > 1, `near the floor the frame moved (${near.moved.toFixed(1)} px)`)
+  assert.ok(far.moved > 1, `and far from it too (${far.moved.toFixed(1)} px)`)
+})
+
+test('a mechanism is never keyed on the environment: the muscles work at any height', () => {
+  // Same frame, laid on its side, with and without the muscles, at two heights.
+  // If the muscles ever learn about the floor (the rejected `STAND.reach` gate),
+  // they stop working in the air and this test fails.
+  const held = (gap, stance) => {
+    const bounds = { w: 4000, h: 700 }
+    const r = new Ragdoll(500, 350)
+    const lowest = Math.max(...r.points.map((p) => p.y + p.r))
+    for (const p of r.points) {
+      p.y += bounds.h - gap - lowest
+      p.py += bounds.h - gap - lowest
+    }
+    r.setJointGrip(0)
+    spin(r, 0.9)
+    for (let i = 0; i < 60 * 2; i++) run(r, 1, { ...still(NO_GRAVITY), stance }, bounds)
+    return lean(r)
+  }
+
+  for (const [where, gap] of [['at the floor', 10], ['high above it', 520]]) {
+    const off = held(gap, 0)
+    const on = held(gap, 0.35)
+    const deg = (rad) => ((rad * 180) / Math.PI).toFixed(0)
+    assert.ok(
+      on < off * 0.6,
+      `${where} the muscles straighten him (${deg(on)}° left against ${deg(off)}° without)`,
+    )
+  }
+})
+
+test('the skeleton is built the original way: 1 + 5 + 4 + 4 + 5 + 5 circles', () => {  assert.deepEqual(SECTION_SIZES, {
     head: 1,
     torso: 5,
     armL: 4,
