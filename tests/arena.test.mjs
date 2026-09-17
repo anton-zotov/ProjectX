@@ -75,7 +75,6 @@ test('default settings are the documented ones', () => {
     bodyScale: 0.85,
     showSkeleton: true,
     elasticity: 1,
-    stance: 0,
     jointGrip: 0.25,
     showTuning: true,
   })
@@ -110,9 +109,9 @@ test('the camera is centred on the character head', () => {
 test('the field is fieldScreens x 3/8 screens and contains the character', () => {
   for (const fieldScreens of [2, 3, 6]) {
     // Nothing that holds the character back here: this is about the field and
-    // its walls, and both the stance and the joint grip deliberately hold him.
+    // its walls, and the joint grip deliberately holds a pose.
     // (The grip is about holding a pose, not about the field.)
-    const s = makeScene({ fieldScreens, autoPilot: false, gravity: 0, thrust: 1900, stance: 0, jointGrip: 0 })
+    const s = makeScene({ fieldScreens, autoPilot: false, gravity: 0, thrust: 1900, jointGrip: 0 })
     assert.equal(s.scene.worldW, fieldScreens * 320)
     assert.equal(s.scene.worldH, fieldScreens * 320 * (3 / 8))
 
@@ -299,19 +298,19 @@ test('the tuning view draws what the sliders change', () => {
   const Grip = '#ffb347'
   const Slip = '#ff5f56'
   const Elastic = '#5ec8ff'
-  const Muscle = '#c58cff'
+  const Bone = '#c8ff6b'
 
-  const on = makeScene({ autoPilot: false, showTuning: true, jointGrip: 0.5, stance: 0.5 }).frame()
-  const off = makeScene({ autoPilot: false, showTuning: false, jointGrip: 0.5, stance: 0.5 }).frame()
+  const on = makeScene({ autoPilot: false, showTuning: true, jointGrip: 0.5 }).frame()
+  const off = makeScene({ autoPilot: false, showTuning: false, jointGrip: 0.5 }).frame()
 
   const colours = (calls) => new Set(calls.map((c) => c.style).filter((s) => typeof s === 'string'))
   const shown = colours(on)
   assert.ok(shown.has(Grip) || shown.has(Slip), 'the joints are drawn as bones')
   assert.ok(shown.has(Elastic), 'the room a link has to stretch is drawn')
-  assert.ok(shown.has(Muscle), 'the target skeleton of the muscles is drawn')
+  assert.ok(shown.has(Bone), 'the welded bones of the chains are drawn')
 
   const hidden = colours(off)
-  for (const colour of [Grip, Slip, Elastic, Muscle]) {
+  for (const colour of [Grip, Slip, Elastic, Bone]) {
     assert.ok(!hidden.has(colour), `nothing of the tuning view is drawn when it is off (${colour})`)
   }
 })

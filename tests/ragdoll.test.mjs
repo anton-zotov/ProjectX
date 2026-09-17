@@ -84,7 +84,7 @@ const spin = (r, angle) => {
 
 /**
  * How far the frame is from upright, in radians: the angle of the pelvis->head
- * axis against the vertical. Only the muscles can change this - the links hold
+ * axis against the vertical: which way is up. Nothing in the frame knows it
  * the SHAPE, but nothing inside the frame knows which way is up.
  */
 const lean = (r) => {
@@ -115,25 +115,25 @@ test('the physics does not know where the floor is (the main rule of the project
   // - the only thing allowed to differ is contact itself, and here there is no
   // contact in either case.
   const GAP = 10
-  const scenario = (gap, stance) => {
+  const scenario = (gap) => {
     const bounds = { w: 4000, h: 700 }
     const r = new Ragdoll(500, 350)
     // put the feet exactly `gap` above the floor, then lay him on his side and
-    // throw a limb out of pose: the muscles now have real work to do
+    // throw a limb out of pose, so the frame has real work to do
     const lowest = Math.max(...r.points.map((p) => p.y + p.r))
     const shift = bounds.h - gap - lowest
     for (const p of r.points) {
       p.y += shift
       p.py += shift
     }
-    r.setJointGrip(0)
+    r.setJointGrip(0.25)
     spin(r, 0.9)
     tilt(r, 'armL', 1.2)
     tilt(r, 'legR', -0.9)
 
     const started = relative(r)
     for (let i = 0; i < 60 * 2; i++) {
-      run(r, 1, { ...still(NO_GRAVITY), stance }, bounds)
+      run(r, 1, still(NO_GRAVITY), bounds)
     }
     const rel = relative(r)
     // ...how far the frame actually travelled from where it started
@@ -150,8 +150,8 @@ test('the physics does not know where the floor is (the main rule of the project
   }
 
   // the SAME arena, the same push, the same frame - only the height differs
-  const near = scenario(GAP, 0.35)
-  const far = scenario(520, 0.35)
+  const near = scenario(GAP)
+  const far = scenario(520)
 
   // the floor never got in the way in either run: this is a fair comparison
   assert.ok(near.above > 0.5, `near the floor he never touches it (${near.above.toFixed(1)} px above)`)
@@ -172,36 +172,8 @@ test('the physics does not know where the floor is (the main rule of the project
   assert.ok(far.moved > 1, `and far from it too (${far.moved.toFixed(1)} px)`)
 })
 
-test('a mechanism is never keyed on the environment: the muscles work at any height', () => {
-  // Same frame, laid on its side, with and without the muscles, at two heights.
-  // If the muscles ever learn about the floor (the rejected `STAND.reach` gate),
-  // they stop working in the air and this test fails.
-  const held = (gap, stance) => {
-    const bounds = { w: 4000, h: 700 }
-    const r = new Ragdoll(500, 350)
-    const lowest = Math.max(...r.points.map((p) => p.y + p.r))
-    for (const p of r.points) {
-      p.y += bounds.h - gap - lowest
-      p.py += bounds.h - gap - lowest
-    }
-    r.setJointGrip(0)
-    spin(r, 0.9)
-    for (let i = 0; i < 60 * 2; i++) run(r, 1, { ...still(NO_GRAVITY), stance }, bounds)
-    return lean(r)
-  }
-
-  for (const [where, gap] of [['at the floor', 10], ['high above it', 520]]) {
-    const off = held(gap, 0)
-    const on = held(gap, 0.35)
-    const deg = (rad) => ((rad * 180) / Math.PI).toFixed(0)
-    assert.ok(
-      on < off * 0.6,
-      `${where} the muscles straighten him (${deg(on)}° left against ${deg(off)}° without)`,
-    )
-  }
-})
-
-test('the skeleton is built the original way: 1 + 5 + 4 + 4 + 5 + 5 circles', () => {  assert.deepEqual(SECTION_SIZES, {
+test('the skeleton is built the original way: 1 + 5 + 4 + 4 + 5 + 5 circles', () => {
+  assert.deepEqual(SECTION_SIZES, {
     head: 1,
     torso: 5,
     armL: 4,
@@ -582,12 +554,10 @@ test('the legs stay two legs in flight, without knocking each other about', () =
     return worst
   }
 
-  // Two regimes, because they say different things. With the muscles off (the
-  // default) the legs must NEVER touch, however hard he tumbles. With the
-  // muscles on the pull drags the legs onto stance targets that sit closer
-  // together than the twin contact allows, so a momentary touch is possible -
-  // but it must stay shallow and rare (measured: 0.67 px on 2 frames of 720).
-  const fly = (stance) => {
+  // A pure ragdoll: the legs must NEVER touch, however hard he tumbles. (The
+  // twin contact between the two limbs is what guarantees it, and it is soft so
+  // that the hips do not knock each other about.)
+  const fly = () => {
     const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
     let overlap = 0
     let share = 0
@@ -597,7 +567,6 @@ test('the legs stay two legs in flight, without knocking each other about', () =
         thrustX: Math.cos(i * 0.02) * DEFAULTS.thrust,
         thrustY: Math.sin(i * 0.031) * DEFAULTS.thrust,
         gravity: DEFAULTS.gravity,
-        stance,
       }, ARENA)
       const now = deepest(r)
       if (now > 0.5) share++
@@ -606,75 +575,26 @@ test('the legs stay two legs in flight, without knocking each other about', () =
     return { overlap, share, frames }
   }
 
-  const pure = fly(0)
-  assert.ok(pure.overlap < 0.5, `as a pure ragdoll the legs never touch (worst ${pure.overlap.toFixed(2)} px)`)
+  const pure = fly()
+  assert.ok(pure.overlap < 0.5, `the legs never touch (worst ${pure.overlap.toFixed(2)} px)`)
   assert.equal(pure.share, 0, `not even for a moment (${pure.share} of ${pure.frames} frames)`)
 
-  const muscled = fly(0.35)
-  assert.ok(muscled.overlap < 1.5, `with the muscles on they only brush (worst ${muscled.overlap.toFixed(2)} px)`)
-  assert.ok(
-    muscled.share <= 4,
-    `and rarely (${muscled.share} of ${muscled.frames} frames overlap deeper than 0.5 px)`,
-  )
-
-  // ...and while he just stands there, the hips must not twitch
+  // ...and while he just stands there, the hips must not twitch. He stands
+  // because the joints hold their angle (the game's default), and that is the
+  // state this is about: a settled frame.
   const standing = onFloor()
-  run(standing, 60 * 3, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity, stance: 0.35 }, ARENA)
+  standing.setJointGrip(0.25)
+  run(standing, 60 * 3, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity }, ARENA)
   const before = standing.points.map((p) => ({ x: p.x, y: p.y }))
   let twitch = 0
   for (let i = 0; i < 60 * 6; i++) {
-    run(standing, 1, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity, stance: 0.35 }, ARENA)
+    run(standing, 1, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity }, ARENA)
     for (const [k, p] of standing.points.entries()) {
       twitch = Math.max(twitch, Math.hypot(p.x - before[k].x, p.y - before[k].y))
       before[k] = { x: p.x, y: p.y }
     }
   }
   assert.ok(twitch < 0.1, `the hips do not knock each other about (worst ${twitch.toFixed(3)} px/frame)`)
-})
-
-test('the stance gets him up and holds him, and can be switched off', () => {
-  const standFor = (stance) => {
-    const r = onFloor()
-    let ticks = 0
-    for (let i = 0; i < 60 * 6; i++) {
-      run(r, 1, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity, stance }, ARENA)
-      if (i % 60 === 59 && ARENA.h - r.head.y > 40) ticks++
-    }
-    return ticks
-  }
-
-  assert.equal(standFor(0.35), 6, 'with the muscles on he stays on his feet')
-  assert.ok(standFor(0) < 5, 'without them he topples, as a pure ragdoll does')
-
-  // The muscles are universal - they act in the air too - but they must not
-  // brake the flight: the pull is an internal force that holds the POSE, and
-  // holding a pose costs nothing in space. (Damping the absolute velocity
-  // instead of the velocity relative to the body is what used to turn this
-  // slider into a brake: 453 px -> 75 px in 3 s. That was a bug, not design.)
-  const flight = (stance) => {
-    const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
-    const x0 = r.head.x
-    for (let i = 0; i < 60 * 3; i++) {
-      run(r, 1, { thrustX: DEFAULTS.thrust, thrustY: 0, gravity: 0, stance }, ARENA)
-    }
-    // ...and how far the circles stray from where the muscles want them
-    let stray = 0
-    for (const [i, target] of r.stanceTargets().entries()) {
-      stray = Math.max(stray, Math.hypot(r.points[i].x - target.x, r.points[i].y - target.y))
-    }
-    return { flown: r.head.x - x0, stray }
-  }
-  const off = flight(0)
-  const on = flight(1)
-  assert.ok(off.flown > 300, `a pure ragdoll flies (${off.flown.toFixed(0)} px)`)
-  assert.ok(
-    on.flown > off.flown * 0.9,
-    `the muscles do not brake the flight (${on.flown.toFixed(0)} vs ${off.flown.toFixed(0)} px)`,
-  )
-  assert.ok(
-    on.stray < off.stray * 0.8,
-    `but they do hold the pose in the air (${on.stray.toFixed(1)} vs ${off.stray.toFixed(1)} px)`,
-  )
 })
 
 test('the joint grip holds the frame up and costs nothing in flight', () => {
@@ -692,7 +612,7 @@ test('the joint grip holds the frame up and costs nothing in flight', () => {
   assert.ok(standFor(0) < 5, 'a frame of springs only topples')
   assert.equal(standFor(0.25), 6, 'with the joints holding their angle it stands')
 
-  // Unlike a muscle pulling towards a stance, the grip does not slow the flight
+  // The grip holds the pose without slowing the flight
   // down: it holds the pose, it does not push the character back.
   const flight = (grip) => {
     const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
@@ -966,7 +886,7 @@ test('the default thrust lifts the frame off the floor', () => {
   const r = onFloor()
   const start = ARENA.h - r.head.y
   for (let i = 0; i < 60; i++) {
-    run(r, 1, { thrustX: 0, thrustY: -DEFAULTS.thrust, gravity: DEFAULTS.gravity, stance: 0 }, ARENA)
+    run(r, 1, { thrustX: 0, thrustY: -DEFAULTS.thrust, gravity: DEFAULTS.gravity }, ARENA)
   }
   const climbed = ARENA.h - r.head.y - start
   assert.ok(climbed > 20, `one second of thrust lifts it by ${climbed.toFixed(0)} px`)

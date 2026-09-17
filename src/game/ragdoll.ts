@@ -1,4 +1,4 @@
-import { BODY, LIMITS, LINK, SIM, STAND, type BodyKind, type LinkKind, type ShapeKind } from './config'
+import { BODY, LIMITS, LINK, SIM, type BodyKind, type LinkKind, type ShapeKind } from './config'
 
 /* ------------------------------------------------------------------ *
  *  Ragdoll ("чувачок")
@@ -80,11 +80,6 @@ export interface StepInput {
   thrustY: number
   /** Gravity acceleration applied to every circle, px/s^2. */
   gravity: number
-  /**
-   * How hard the muscles hold the stance, 0..1 (the admin slider). At 0 the
-   * character is a pure ragdoll; at 1 he gets up and stays on his feet.
-   */
-  stance?: number
 }
 
 /**
@@ -341,8 +336,6 @@ export class Ragdoll {
    */
   private grip = 0
   /** Rest pose of every circle, in the body's own frame (origin = torso0). */
-  private readonly poseX: number[] = []
-  private readonly poseY: number[] = []
 
   constructor(x: number, y: number, scale: number = BODY.scale) {
     for (const chain of CHAINS) {
@@ -462,16 +455,6 @@ export class Ragdoll {
       }
     }
 
-    // The target skeleton: where every circle sits in the rest pose, measured
-    // upright from the body's centre of mass. The muscles pull towards these
-    // points (see `stand`), which is what lets the character get up and hold a
-    // stance - links alone can never say which way is up.
-    const middle = this.center()
-    for (const p of this.points) {
-      this.poseX.push(p.x - middle.x)
-      this.poseY.push(p.y - middle.y)
-    }
-
     // Which pairs of circles have to be kept apart. Linked circles are handled
     // by their link (which already stops them overlapping); everything else
     // that starts out close enough to ever meet goes into the list - except the
@@ -508,95 +491,6 @@ export class Ragdoll {
     this.pushScale = body > 0 ? total / body : 1
     this.elasticity = 0 // so that the first setElasticity always applies
     this.setElasticity(SIM.elasticity)
-  }
-
-  /**
-   * The muscles: pull every circle towards its place in the target skeleton -
-   * the stance - which is the rest pose held UPRIGHT and anchored at the
-   * body's current centre of mass. That is what can straighten the character
-   * and keep it on its feet; links alone cannot, because they never say which
-   * way is up.
-   *
-   * `stance` comes from the admin slider (0 = pure ragdoll). The pull is the
-   * same everywhere: no special rules near the floor.
-   */
-  private stand(stance: number, dt: number, bounds: Bounds): void {
-    if (stance <= 0) return
-
-    const c = this.center()
-    const k = STAND.frequency * stance * dt * dt
-    const damp = STAND.damping * stance
-
-    // The pull is an internal force: whatever the limbs take, the body gives
-    // back, so the frame never pushes itself around.
-    let pushX = 0
-    let pushY = 0
-    let sum = 0
-    // The velocity of the whole body, so the muscle damper can remove the
-    // circles' velocity RELATIVE to the body and not its flight: damping the
-    // absolute velocity turned the slider into a brake (a flying frame lost
-    // 453 px -> 75 px in 3 s at full muscles).
-    let cvx = 0
-    let cvy = 0
-    for (const p of this.points) {
-      const mass = 1 / p.im
-      sum += mass
-      cvx += (p.x - p.px) * mass
-      cvy += (p.y - p.py) * mass
-    }
-    if (sum === 0) return
-    cvx /= sum
-    cvy /= sum
-
-    for (let i = 0; i < this.points.length; i++) {
-      const p = this.points[i]
-      const gain = STAND.gain[p.part]
-      if (!gain) continue
-
-      const tx = c.x + this.poseX[i]
-      const ty = c.y + this.poseY[i]
-      let dx = (tx - p.x) * k * gain
-      let dy = (ty - p.y) * k * gain
-
-      // A circle lying against a wall is pulled ALONG it, never into it:
-      // pushing into the wall would be answered by the wall every substep and
-      // that reaction shakes the whole frame.
-      const edge = 1.5
-      if (p.y + p.r > bounds.h - edge && dy > 0) dy = 0
-      if (p.y - p.r < edge && dy < 0) dy = 0
-      if (p.x + p.r > bounds.w - edge && dx > 0) dx = 0
-      if (p.x - p.r < edge && dx < 0) dx = 0
-
-      p.x += dx
-      p.y += dy
-      const mass = 1 / p.im
-      pushX += dx * mass
-      pushY += dy * mass
-
-      // ...and damp the muscle: without it the pull makes the whole frame buzz.
-      // Only the motion RELATIVE to the body is removed.
-      if (damp > 0) {
-        const vx = p.x - p.px - cvx
-        const vy = p.y - p.py - cvy
-        p.px += vx * damp
-        p.py += vy * damp
-      }
-    }
-
-    // The reaction goes into the body as MOMENTUM: the total displacement the
-    // limbs got, times their mass, divided by the body's mass - a displacement
-    // every body circle shares. Getting this wrong (as it was: the plain sum of
-    // the corrections) pumps energy into the frame until it explodes.
-    let body = 0
-    for (const p of this.points) {
-      if (p.part === 'torso') body += 1 / p.im
-    }
-    if (body === 0 || sum === 0) return
-    for (const p of this.points) {
-      if (p.part !== 'torso') continue
-      p.x -= pushX / body
-      p.y -= pushY / body
-    }
   }
 
   /** Build a bone from the circles that belong to it. */
@@ -769,14 +663,6 @@ export class Ragdoll {
     this.grip = SIM.jointGrip * Math.max(0, Math.min(1, fraction))
   }
 
-  /**
-   * Where the muscles want every circle to be: the target skeleton (the stance,
-   * upright, anchored at the centre of mass). Used by the tuning view.
-   */
-  stanceTargets(): Array<{ x: number; y: number }> {
-    const c = this.center()
-    return this.points.map((_, i) => ({ x: c.x + this.poseX[i], y: c.y + this.poseY[i] }))
-  }
 
   /**
    * The welded bones as lists of circle indices (a leg is two bones sharing the
@@ -875,7 +761,6 @@ export class Ragdoll {
     push.y += input.thrustY * this.pushScale * dt2
 
     // 3. The pose springs hold the limbs where they belong
-    this.stand(input.stance ?? 0, dt, bounds)
 
     // 4. Satisfy the skeleton and the walls together, iteratively. The XPBD
     //    accumulators live for one substep, so they start from zero.

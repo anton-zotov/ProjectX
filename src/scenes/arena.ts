@@ -29,7 +29,6 @@ export interface GameSettings {
   bodyScale: number // size of the character (skeleton scale)
   showSkeleton: boolean // paint the circles over the body (tuning view)
   elasticity: number // how rubbery the frame is (1 = the tuned default)
-  stance: number // 0..1: how hard the muscles hold the stance
   jointGrip: number // 0..1: how hard the joints hold their angle
   showTuning: boolean // paint what the sliders change over the character
 }
@@ -46,7 +45,6 @@ export const defaultSettings = (): GameSettings => ({
   bodyScale: BODY.scale,
   showSkeleton: true,
   elasticity: 1,
-  stance: 0, // pure, universal ragdoll physics; the muscles are an experiment (see docs/VISION.md)
   jointGrip: 0.25, // 0 = springs only (floppy); 1 = joints hold, the frame stands
   showTuning: true, // the sliders are drawn on the figure while we tune
 })
@@ -97,8 +95,6 @@ const ELASTIC_COLOR = '#5ec8ff'
 const GRIP_COLOR = '#ffb347'
 /** Tuning view: a joint that is slipping right now. */
 const SLIP_COLOR = '#ff5f56'
-/** Tuning view: where the muscles want a circle to be. */
-const MUSCLE_COLOR = '#c58cff'
 /** Tuning view: a welded bone (the rigid piece every chain is built from). */
 const BONE_COLOR = '#c8ff6b'
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
@@ -259,7 +255,7 @@ export class ArenaScene implements Scene {
     while (this.simAcc >= SIM.dt && steps < SIM.maxStepsPerFrame) {
       this.ragdoll.step(
         SIM.dt,
-        { thrustX: tx, thrustY: ty, gravity: this.settings.gravity, stance: this.settings.stance },
+        { thrustX: tx, thrustY: ty, gravity: this.settings.gravity },
         { w: this.worldW, h: this.worldH },
       )
       this.simAcc -= SIM.dt
@@ -367,12 +363,13 @@ export class ArenaScene implements Scene {
   }
 
   /**
-   * The tuning view: draws what the three sliders change, right on the figure.
+   * The tuning view: draws what the sliders change, right on the figure.
    *
    *   elasticity  a halo around every link, as wide as the stretch it allows
    *   joint grip  a bone over every joint, thicker the harder it grips, and
    *               red while that joint is slipping
-   *   muscles     a ghost circle where the target skeleton wants each circle
+   *   (bones and the hinge circle are drawn too: they are what the elasticity
+   *   of a limb is applied to, so the sliders read on every part of the body)
    */
   private renderTuning(ctx: CanvasRenderingContext2D): void {
     const r = this.ragdoll
@@ -442,29 +439,6 @@ export class ArenaScene implements Scene {
         ctx.moveTo(p1.x, p1.y)
         ctx.lineTo(p2.x, p2.y)
         ctx.stroke()
-      }
-      ctx.globalAlpha = 1
-    }
-
-    // muscles: where the target skeleton wants each circle, and the string the
-    // muscle pulls along - without the strings the targets read as stray circles
-    // floating around the body instead of "he is pulling himself in here"
-    if (this.settings.stance > 0) {
-      ctx.globalAlpha = Math.min(0.7, 0.25 + this.settings.stance * 0.5)
-      ctx.strokeStyle = MUSCLE_COLOR
-      ctx.lineWidth = 1.2
-      const targets = r.stanceTargets()
-      for (const [i, t] of targets.entries()) {
-        const p = r.points[i]
-        ctx.beginPath()
-        ctx.arc(t.x, t.y, 2, 0, Math.PI * 2)
-        ctx.stroke()
-        ctx.globalAlpha *= 0.55
-        ctx.beginPath()
-        ctx.moveTo(p.x, p.y)
-        ctx.lineTo(t.x, t.y)
-        ctx.stroke()
-        ctx.globalAlpha = Math.min(0.7, 0.25 + this.settings.stance * 0.5)
       }
       ctx.globalAlpha = 1
     }

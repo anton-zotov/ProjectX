@@ -288,8 +288,6 @@ export function installDom({ width = 1000, height = 600 } = {}) {
     '#o-grip': makeElement('output'),
     '#s-gravity': makeElement('input', { value: '180' }),
     '#o-gravity': makeElement('output'),
-    '#s-stance': makeElement('input', { value: '0' }),
-    '#o-stance': makeElement('output'),
     '#s-auto': makeElement('input', { type: 'checkbox', checked: false }),
     '#s-color': makeElement('input', { value: '1' }),
     '#o-color': makeElement('output'),
