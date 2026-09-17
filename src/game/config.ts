@@ -253,8 +253,13 @@ export const LIMITS = {
    * spinning all the way round - it can nod and shake a little, like a neck
    * with muscles in it.
    */
-  /** How far the knee may fold: the leg is two bones and this one hinge. */
-  knee: 1.7,
+  /**
+   * How far a HINGE may fold, in radians. A hinge is the one place a chain of
+   * circles bends: where two of its bones meet - the elbow, the knee. Which
+   * circle that is, is per-chain DATA (see CHAINS in ragdoll.ts); the mechanism
+   * that builds and folds it is the same for every chain, arms and legs alike.
+   */
+  hinge: { head: 0, torso: 0.25, arm: 1.2, leg: 1.7, attach: 0 },
   neckFold: 0.94,
   neckGrow: 1.01,
 }

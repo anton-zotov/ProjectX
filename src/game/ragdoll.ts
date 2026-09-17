@@ -107,6 +107,18 @@ interface Chain {
    * rotate all the way around the body circle. Two joints pin the attitude.
    */
   attachAlong?: string
+  /**
+   * The circle where this chain FOLDS - its hinge (the elbow, the knee).
+   * Two bones meet there, and it is the only place the chain may bend; how far
+   * it may fold is `LIMITS.hinge[kind]`. `undefined` means the chain is a
+   * single rigid bone (the body, the head).
+   *
+   * This is the whole difference between a leg and an arm: DATA. The code that
+   * builds a chain - its bones, welded links, braces and shape matching - is
+   * one and the same for every chain, because the main rule of this project is
+   * that the physics is universal (see docs/VISION.md).
+   */
+  hinge?: number
 }
 
 const R = BODY.radius.body
@@ -176,6 +188,9 @@ const armChain = (side: number, part: PartId): Chain => ({
     [side * Math.sin(ARM_ANGLE) * ARM_STEP, Math.cos(ARM_ANGLE) * ARM_STEP],
     4,
   ),
+  // The arm folds at the ELBOW, the second circle: above it the upper arm, below
+  // it the forearm. Exactly the same mechanism as the knee.
+  hinge: 1,
   attachTo: 'torso0',
   attachKind: 'attach',
   attachAlong: 'torso1',
@@ -190,6 +205,9 @@ const legChain = (side: number, part: PartId): Chain => ({
     [side * Math.sin(LEG_ANGLE) * LEG_STEP, Math.cos(LEG_ANGLE) * LEG_STEP],
     5,
   ),
+  // The leg folds at the KNEE, the middle circle: the thigh above it, the shin
+  // below it. The arm uses the same builder with a different number here.
+  hinge: 2,
   attachTo: PELVIS,
   attachKind: 'attach',
   attachAlong: `torso${TORSO_COUNT - 2}`,
@@ -245,9 +263,6 @@ const nameOf = (chain: Chain, i: number): string =>
 /** Which link tuning a body section uses (the two arms share 'arm'). */
 const linkKindOf = (part: PartId): BodyKind =>
   part === 'armL' || part === 'armR' ? 'arm' : part === 'legL' || part === 'legR' ? 'leg' : part
-
-/** The tuning kind of a whole chain ('leg' for both legs). */
-const chainKind = (chain: Chain): BodyKind => linkKindOf(chain.part)
 
 /**
  * A rigid bone: circles that keep their shape.
@@ -353,50 +368,66 @@ export class Ragdoll {
 
       this.sections.push({ part: chain.part, from, count: chain.at.length })
 
-      // A LEG is two bones hinged at the knee (circle 2 of five): the thigh
-      // (0,1 and the hinge) and the shin (3,4 and the hinge). Their shape is
-      // kept rigid by `straighten`, so the leg folds at the knee and nowhere
-      // else.
-      if (chainKind(chain) === 'leg') {
-        const knee = from + 2
-        // TWO bones, both turning around the knee: the thigh above it and the
-        // shin below it - so the leg folds exactly at the knee and nowhere else
-        this.bones.push(this.makeBone([knee, from, from + 1]))
-        this.bones.push(this.makeBone([knee, from + 3, from + 4]))
-      }
-
-      // chain links: neighbouring circles, elastic, never overlapping.
-      // The links of a LEG are rigid instead: with elastic links a "bone" can
-      // still bend, because a chain of stretchy links bows when it is pushed
-      // (measured: the thigh bent by 38 degrees however stiff its braces were).
-      // A leg is two bones and a knee - so its links are bones.
-      for (let i = 1; i < chain.at.length; i++) {
-        this.addLink(from + i - 1, from + i, linkKindOf(chain.part), true, false, chainKind(chain) === 'leg')
-      }
-
-      // braces inside the chain: circles i-2 and i are pulled back to the
-      // distance they have at rest, so a chain that gets bent springs straight
-      // again. `LIMITS.bend` is an angle; the brace works on distances, so the
-      // allowed shortening is cos(bend/2).
+      // ------------------------------------------------------------------
+      //  HOW A CHAIN IS BUILT - the same code for the body, an arm and a leg.
       //
-      // A LEG is two bones with ONE hinge: the braces that stay inside a bone
-      // (0-2 and 2-4 of five circles) are welded, and only the brace across the
-      // knee (1-3) may fold - so the leg folds at the knee instead of rippling.
+      //  A chain is a line of circles with, at most, ONE hinge: a limb folds at
+      //  its elbow or its knee, the body does not fold at all. Everything below
+      //  is driven by that single number (`chain.hinge`), which is why no part
+      //  of the body is a special case in the physics.
+      //
+      //  Two bones meet at the hinge, and each bone is a rigid piece:
+      //    - the shape of a bone is fitted rigidly once per substep
+      //      (`straighten`), so a bone can neither stretch nor bow;
+      //    - the links INSIDE a bone are welded (no room to stretch at all);
+      //    - the braces inside a bone are welded too, and only the brace that
+      //      straddles the hinge may fold - by `LIMITS.hinge` - so a limb folds
+      //      at the joint and nowhere else.
+      //
+      //  Measured, when only the legs were built this way: the arms rippled up
+      //  to 31 degrees and the legs 0, and the arm slider did nothing to a leg.
+      // ------------------------------------------------------------------
       const limb = linkKindOf(chain.part)
+      const hinge = chain.hinge ?? -1
+      const circles = chain.at.map((_, i) => i)
+      const bones =
+        hinge < 0
+          ? [circles]
+          : [circles.filter((i) => i <= hinge), circles.filter((i) => i >= hinge)]
+      /** Is this pair of circles inside ONE bone? */
+      const inOneBone = (a: number, b: number): boolean =>
+        bones.some((bone) => bone.includes(a) && bone.includes(b))
+
+      for (const bone of bones) {
+        if (bone.length > 1) this.bones.push(this.makeBone(bone.map((i) => from + i)))
+      }
+
       const fold = Math.cos(LIMITS.bend[limb] / 2)
+      const hingeFold = Math.cos((LIMITS.hinge[limb] ?? LIMITS.bend[limb]) / 2)
+
+      // chain links: neighbours, never overlapping. Welded inside a bone.
+      for (let i = 1; i < chain.at.length; i++) {
+        this.addLink(from + i - 1, from + i, limb, true, false, inOneBone(i - 1, i))
+      }
+
+      // braces: circles i-2 and i are pulled back to the distance they have at
+      // rest, so a chain that gets bent springs straight again. `LIMITS.bend`
+      // is an angle; the brace works on distances, so the allowed shortening is
+      // cos(bend/2).
       for (let i = 2; i < chain.at.length; i++) {
-        const insideBone = limb === 'leg' && i % 2 === 0
-        if (insideBone) {
+        if (hinge >= 0 && !inOneBone(i - 2, i)) {
+          // the brace across the hinge: the fold of the limb
+          this.addBrace(from + i - 2, from + i, hingeFold, 'brace')
+        } else if (hinge >= 0) {
           this.addBrace(from + i - 2, from + i, 1, 'brace', 1, true)
         } else {
-          const knee = limb === 'leg'
-          this.addBrace(from + i - 2, from + i, knee ? Math.cos(LIMITS.knee / 2) : fold, 'brace')
+          this.addBrace(from + i - 2, from + i, fold, 'brace')
         }
       }
-      // A brace from end to end stops a limb bowing out sideways. A leg does not
-      // need it (its bones cannot bow) and it would lock the knee, so it is
-      // only added where the chain is elastic.
-      if (chain.at.length >= 4 && limb !== 'leg') {
+      // A single-bone chain (the body) would bow out sideways without a brace
+      // from end to end. A chain with a hinge must NOT have one: it would lock
+      // the fold.
+      if (hinge < 0 && chain.at.length >= 4) {
         this.addBrace(from, from + chain.at.length - 1, fold, 'brace')
       }
 
@@ -745,6 +776,16 @@ export class Ragdoll {
   stanceTargets(): Array<{ x: number; y: number }> {
     const c = this.center()
     return this.points.map((_, i) => ({ x: c.x + this.poseX[i], y: c.y + this.poseY[i] }))
+  }
+
+  /**
+   * The welded bones as lists of circle indices (a leg is two bones sharing the
+   * knee). They are not links - they are fitted rigidly once per substep - so
+   * the tuning view has to draw them separately, or a leg looks emptier than an
+   * arm although it is the stiffest part of the body.
+   */
+  boneSpans(): number[][] {
+    return this.bones.map((bone) => bone.points.map((p) => p.i))
   }
 
   /** How hard the joints hold their angle right now, in px per substep. */

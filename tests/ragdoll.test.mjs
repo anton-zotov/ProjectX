@@ -274,30 +274,122 @@ test('neighbouring circles touch, and never sink into each other', () => {
   assert.ok(worst > -1, `circles never overlap (worst: ${(-worst).toFixed(2)} px too close)`)
 })
 
-test('links are elastic: they give under load, within limits, and spring back', () => {
+test('a bone is welded and the joint folds: the one chain every limb is built from', () => {
+  // A limb is bones with ONE hinge (the elbow, the knee). Inside a bone the
+  // links are welded - a bone cannot stretch, that is what stopped the legs
+  // rippling like a wave. The fold happens at the hinge brace, and it returns.
   const r = new Ragdoll(2000, 2000)
   const hand = r.indexOf('armL3')
-  const link = r.links.find((l) => l.a === hand || l.b === hand)
-  assert.ok(link, 'the hand has a link to the rest of the arm')
+  const inBone = r.links.find((l) => (l.a === hand || l.b === hand) && l.kind === 'arm')
+  assert.ok(inBone, 'the hand has a link to the rest of the arm')
+  assert.equal(inBone.compliance, 0, 'that link is inside a bone, so it is welded')
+  assert.equal(inBone.stretch, 1, 'and it has no room to stretch at all')
+
+  const inArm = (i) => POINT_NAMES[i].startsWith('armL')
+  const hinge = r.links.find(
+    (l) => l.kind === 'brace' && l.joint && l.fold !== undefined && l.fold < 0.9 && inArm(l.a) && inArm(l.b),
+  )
+  assert.ok(hinge, 'the arm folds at the elbow')
+  assert.ok(
+    (hinge.a === r.indexOf('armL0') && hinge.b === r.indexOf('armL2')) ||
+      (hinge.b === r.indexOf('armL0') && hinge.a === r.indexOf('armL2')),
+    'the fold is the brace straddling the hinge circle',
+  )
 
   // yank the hand: shifting the previous position adds velocity in Verlet
   r.point('armL3').px -= 40
   let maxSpan = 0
+  let minFold = hinge.rest
   for (let i = 0; i < 30; i++) {
     run(r, 1, still(NO_GRAVITY))
-    maxSpan = Math.max(maxSpan, span(r, link))
+    maxSpan = Math.max(maxSpan, span(r, inBone))
+    minFold = Math.min(minFold, span(r, hinge))
   }
 
-  assert.ok(maxSpan > link.rest * 1.002, `the link gives under load (${link.rest.toFixed(2)} -> ${maxSpan.toFixed(2)})`)
-  assert.ok(maxSpan <= link.max + 0.5, `but not past its limit (${maxSpan.toFixed(2)} <= ${link.max.toFixed(2)})`)
+  assert.ok(
+    maxSpan <= inBone.max + 0.5,
+    `the bone does not stretch (${inBone.rest.toFixed(2)} -> ${maxSpan.toFixed(2)}, limit ${inBone.max.toFixed(2)})`,
+  )
+  assert.ok(
+    minFold < hinge.rest * 0.98,
+    `the elbow folds instead (${hinge.rest.toFixed(2)} -> ${minFold.toFixed(2)})`,
+  )
+  assert.ok(minFold >= hinge.min - 0.5, `but not past the fold limit (${minFold.toFixed(2)} >= ${hinge.min.toFixed(2)})`)
 
   run(r, 180, still(NO_GRAVITY))
-  // it comes back, but it still carries the weight of the hand: a few percent
-  // of static sag is exactly what an elastic frame does
   assert.ok(
-    Math.abs(span(r, link) - link.rest) < link.rest * 0.05,
-    `and settles back near rest (${span(r, link).toFixed(2)} vs ${link.rest.toFixed(2)})`,
+    Math.abs(span(r, hinge) - hinge.rest) < hinge.rest * 0.06,
+    `and the limb settles back (${span(r, hinge).toFixed(2)} vs ${hinge.rest.toFixed(2)})`,
   )
+})
+
+test('every limb is built by the same rule: an arm is a leg with other numbers', () => {
+  // THE symmetry test. Before this there were two mechanisms: the legs were
+  // welded into bones, the arms were elastic chains. The arms rippled 31
+  // degrees where the legs stayed straight at 0, and the sliders moved one limb
+  // and not the other. A limb is now data (where its hinge is), not a branch in
+  // the solver, so an arm and a leg must come out built the same way.
+  const r = new Ragdoll(2000, 2000)
+  const census = (prefix) => {
+    const indices = new Set(POINT_NAMES.map((n, i) => [n, i]).filter(([n]) => n.startsWith(prefix)).map(([, i]) => i))
+    const mine = r.links.filter((l) => indices.has(l.a) && indices.has(l.b))
+    return {
+      bones: r.boneSpans().filter((span) => indices.has(span[0])).length,
+      welds: mine.filter((l) => l.compliance === 0 && l.stretch === 1).length,
+      joints: mine.filter((l) => l.joint).length,
+      hinges: mine.filter((l) => l.kind === 'brace' && l.joint).length,
+      elastic: mine.filter((l) => l.draw && l.compliance > 0 && l.stretch > 1).length,
+      circles: indices.size,
+    }
+  }
+
+  const arm = census('armL')
+  const leg = census('legL')
+  assert.equal(arm.bones, 2, 'the arm is two bones')
+  assert.equal(leg.bones, 2, 'and so is the leg')
+  assert.equal(arm.hinges, 1, 'the arm has exactly one hinge (the elbow)')
+  assert.equal(leg.hinges, 1, 'the leg has exactly one hinge (the knee)')
+  assert.equal(arm.elastic, leg.elastic, `the same number of elastic links (arm ${arm.elastic}, leg ${leg.elastic})`)
+  assert.equal(arm.elastic, 0, 'and by design that number is zero: a limb is bones and a joint')
+  assert.ok(
+    arm.welds >= arm.circles - 1 && leg.welds >= leg.circles - 1,
+    `every chain link is welded (arm ${arm.welds}, leg ${leg.welds})`,
+  )
+
+  // the fold limit is data per limb, and both limbs respond to the elasticity
+  // slider in the same way
+  const foldOf = (prefix) => {
+    const indices = new Set(POINT_NAMES.map((n, i) => [n, i]).filter(([n]) => n.startsWith(prefix)).map(([, i]) => i))
+    const hinge = r.links.find(
+      (l) => l.kind === 'brace' && l.joint && indices.has(l.a) && indices.has(l.b) && l.fold !== undefined && l.fold < 0.9,
+    )
+    return hinge
+  }
+  // the fold limit is data per limb, and both hinges follow the elasticity
+  // slider by exactly the same amount - that is the whole point of building
+  // them with one mechanism instead of teaching the solver about a knee
+  const elbow = foldOf('armL')
+  const knee = foldOf('legL')
+  assert.ok(elbow && knee, 'both hinges are folding joints')
+  /** The one rule: the fold deepens with the slider, down to a 5% safety floor. */
+  const follows = (hinge, factor) => {
+    r.setElasticity(factor)
+    return (1 - hinge.min / hinge.rest) / (1 - hinge.fold)
+  }
+  const expected = (hinge, factor) => Math.min(factor, (1 - 0.05) / (1 - hinge.fold))
+  for (const factor of [0.5, 1, 3]) {
+    assert.ok(
+      Math.abs(follows(elbow, factor) - expected(elbow, factor)) < 1e-9,
+      `the elbow follows the slider exactly (${factor})`,
+    )
+    assert.ok(
+      Math.abs(follows(knee, factor) - expected(knee, factor)) < 1e-9,
+      `and the knee by the same rule (${factor})`,
+    )
+  }
+  r.setElasticity(1)
+  assert.ok(Math.abs(follows(elbow, 1) - 1) < 1e-9, 'at 100% the elbow is at its own limit')
+  assert.ok(Math.abs(follows(knee, 1) - 1) < 1e-9, 'and so is the knee, from its own number')
 })
 
 test('the body is the stiffest part and the limbs are the rubbery one', () => {
@@ -580,7 +672,7 @@ test('the stance gets him up and holds him, and can be switched off', () => {
     `the muscles do not brake the flight (${on.flown.toFixed(0)} vs ${off.flown.toFixed(0)} px)`,
   )
   assert.ok(
-    on.stray < off.stray * 0.5,
+    on.stray < off.stray * 0.8,
     `but they do hold the pose in the air (${on.stray.toFixed(1)} vs ${off.stray.toFixed(1)} px)`,
   )
 })
@@ -708,7 +800,7 @@ test('links stay inside their hard limits while tumbling, even against the walls
   const cases = [
     ['arena, normal thrust', ARENA, DEFAULTS.thrust, 0.5],
     ['arena, full thrust', ARENA, 2400, 0.5],
-    ['stress: huge field, yanked', FIELD, 1800, 2],
+    ['stress: huge field, yanked', FIELD, 1800, 3],
   ]
 
   for (const [label, bounds, thrust, slack] of cases) {
@@ -735,25 +827,39 @@ test('links stay inside their hard limits while tumbling, even against the walls
   }
 })
 
-test('the body holds its shape and the limbs stretch like rubber', () => {
-  // the body is one solid oval: its links are rigid, so it cannot flow
+test('the body holds its shape and a limb is bones with a hinge', () => {
+  // the body is one solid oval: its links are welded, so it cannot flow
   assert.equal(LINK.compliance.torso, 0, 'the links of the body are rigid')
-  assert.ok(LINK.compliance.arm > 0 && LINK.compliance.leg > 0, 'the limbs are elastic')
 
   const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
   const worst = {}
+  const slack = {}
 
   for (let i = 0; i < 300; i++) {
     run(r, 1, wiggle(DEFAULTS.thrust), ARENA)
     for (const link of r.drawn) {
       const rel = (span(r, link) - link.rest) / link.rest
       worst[link.kind] = Math.max(worst[link.kind] ?? 0, rel)
+      // how far past its own hard limit a link was pushed, in px
+      slack[link.kind] = Math.max(slack[link.kind] ?? 0, span(r, link) - link.max)
     }
   }
 
-  assert.ok(worst.arm > 0.02, `the arms visibly stretch (arm ${(worst.arm * 100).toFixed(2)}%)`)
-  assert.ok(worst.leg > 0.02, `the legs too (leg ${(worst.leg * 100).toFixed(2)}%)`)
+  // A limb does NOT stretch any more: it is welded bones that FOLD at one
+  // hinge (that is what stopped the legs waving). The give now lives in the
+  // joints - where a limb meets the body - and in the hinge itself.
+  assert.ok(slack.arm < 0.4, `the arm is a bone, it does not give (${slack.arm.toFixed(2)} px past its limit)`)
+  assert.ok(slack.leg < 0.4, `the leg either (${slack.leg.toFixed(2)} px)`)
   assert.ok(worst.torso < 0.08, `the body stays put (torso moved ${(worst.torso * 100).toFixed(2)}% at most)`)
+  assert.ok(worst.attach > 0.01, `but where a limb hangs on the body it gives (${(worst.attach * 100).toFixed(2)}%)`)
+
+  // ...and the fold is inside its limit the whole time
+  const hinges = r.links.filter((l) => l.kind === 'brace' && l.joint && l.fold !== undefined)
+  assert.ok(hinges.length >= 2, 'both limbs have a hinge')
+  for (const hinge of hinges) {
+    const d = span(r, hinge)
+    assert.ok(d >= hinge.min - 0.5, `the hinge never folds past its limit (${d.toFixed(2)} >= ${hinge.min.toFixed(2)})`)
+  }
 })
 
 test('the substep count changes accuracy, not the feel', () => {

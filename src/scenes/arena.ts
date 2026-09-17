@@ -99,7 +99,8 @@ const GRIP_COLOR = '#ffb347'
 const SLIP_COLOR = '#ff5f56'
 /** Tuning view: where the muscles want a circle to be. */
 const MUSCLE_COLOR = '#c58cff'
-
+/** Tuning view: a welded bone (the rigid piece every chain is built from). */
+const BONE_COLOR = '#c8ff6b'
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
 const hsla = (h: number, s: number, l: number, a: number) =>
@@ -377,6 +378,38 @@ export class ArenaScene implements Scene {
     const r = this.ragdoll
     const grip = this.settings.jointGrip
     const gripPx = r.jointGripPx
+
+    // bones first, under everything: they are the welded structure every chain
+    // is built from, and they are not links - so without drawing them here the
+    // legs (whose links are welded, not elastic) read as emptier and weaker
+    // than the arms, although both are built by the same mechanism.
+    const spans = r.boneSpans()
+    const shared = new Map()
+    for (const span of spans) {
+      for (const i of span) shared.set(i, (shared.get(i) ?? 0) + 1)
+    }
+    for (const span of spans) {
+      if (span.length < 2) continue
+      const first = r.points[span[0]]
+      const last = r.points[span[span.length - 1]]
+      ctx.strokeStyle = BONE_COLOR
+      ctx.globalAlpha = 0.55
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.moveTo(first.x, first.y)
+      ctx.lineTo(last.x, last.y)
+      ctx.stroke()
+    }
+    // the hinge: the circle two bones share - the elbow, the knee
+    for (const [i, count] of shared) {
+      if (count < 2) continue
+      ctx.globalAlpha = 0.9
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(r.points[i].x, r.points[i].y, 2.6, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
 
     // elasticity: the room a link has to stretch (a halo around the body)
     for (const link of r.drawn) {
