@@ -77,6 +77,7 @@ test('default settings are the documented ones', () => {
     elasticity: 1,
     stance: 0,
     jointGrip: 0.25,
+    showTuning: true,
   })
 })
 
@@ -115,16 +116,28 @@ test('the field is fieldScreens x 3/8 screens and contains the character', () =>
     assert.equal(s.scene.worldW, fieldScreens * 320)
     assert.equal(s.scene.worldH, fieldScreens * 320 * (3 / 8))
 
-    s.input({ right: true, down: true })
-    // the character bounces off the walls, so track how far it ever got
+    // Fly straight into a wall, one axis at a time, with no gravity: the
+    // character must reach it and must not pass through. (Pushing diagonally
+    // instead lands him on the floor, where he slows down and the check turns
+    // into a test of the floor friction rather than of the field.)
     let maxX = 0
-    let maxY = 0
+    s.input({ right: true })
     for (let i = 0; i < 900; i++) {
       s.frame()
       for (const p of s.scene.ragdoll.points) {
         assert.ok(p.x >= 0 && p.x <= s.scene.worldW, `x inside for ${fieldScreens} screens`)
         assert.ok(p.y >= 0 && p.y <= s.scene.worldH, `y inside for ${fieldScreens} screens`)
         maxX = Math.max(maxX, p.x)
+      }
+    }
+
+    let maxY = 0
+    s.input({ down: true })
+    for (let i = 0; i < 900; i++) {
+      s.frame()
+      for (const p of s.scene.ragdoll.points) {
+        assert.ok(p.x >= 0 && p.x <= s.scene.worldW, `x inside for ${fieldScreens} screens`)
+        assert.ok(p.y >= 0 && p.y <= s.scene.worldH, `y inside for ${fieldScreens} screens`)
         maxY = Math.max(maxY, p.y)
       }
     }
@@ -280,6 +293,27 @@ test('the tuning view paints the circles of the skeleton over the body', () => {
     fills(off).every((c) => c.style === BODY_COLOR),
     'without the tuning view the body is one colour',
   )
+})
+
+test('the tuning view draws what the sliders change', () => {
+  const Grip = '#ffb347'
+  const Slip = '#ff5f56'
+  const Elastic = '#5ec8ff'
+  const Muscle = '#c58cff'
+
+  const on = makeScene({ autoPilot: false, showTuning: true, jointGrip: 0.5, stance: 0.5 }).frame()
+  const off = makeScene({ autoPilot: false, showTuning: false, jointGrip: 0.5, stance: 0.5 }).frame()
+
+  const colours = (calls) => new Set(calls.map((c) => c.style).filter((s) => typeof s === 'string'))
+  const shown = colours(on)
+  assert.ok(shown.has(Grip) || shown.has(Slip), 'the joints are drawn as bones')
+  assert.ok(shown.has(Elastic), 'the room a link has to stretch is drawn')
+  assert.ok(shown.has(Muscle), 'the target skeleton of the muscles is drawn')
+
+  const hidden = colours(off)
+  for (const colour of [Grip, Slip, Elastic, Muscle]) {
+    assert.ok(!hidden.has(colour), `nothing of the tuning view is drawn when it is off (${colour})`)
+  }
 })
 
 test('the HUD reports fps, frame time and the hint', () => {

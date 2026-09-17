@@ -150,7 +150,7 @@ export const LINK = {
    * keeps a little room on its neck.
    */
   give: {
-    head: 0.05,
+    head: 0, // the head sits right on the neck circle, no gap
     torso: 0,
     arm: 0,
     leg: 0,
@@ -237,6 +237,8 @@ export const LIMITS = {
    * spinning all the way round - it can nod and shake a little, like a neck
    * with muscles in it.
    */
+  /** How far the knee may fold: the leg is two bones and this one hinge. */
+  knee: 1.7,
   neckFold: 0.94,
   neckGrow: 1.01,
 }

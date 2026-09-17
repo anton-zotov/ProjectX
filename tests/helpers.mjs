@@ -300,6 +300,7 @@ export function installDom({ width = 1000, height = 600 } = {}) {
     '#s-body': makeElement('input', { value: '0.85' }),
     '#o-body': makeElement('output'),
     '#s-grid': makeElement('input', { type: 'checkbox', checked: true }),
+    '#s-tuning': makeElement('input', { type: 'checkbox', checked: true }),
     '#s-skeleton': makeElement('input', { type: 'checkbox', checked: true }),
     '#s-quality': makeElement('input', { type: 'checkbox', checked: true }),
     '#s-profiler': makeElement('input', { type: 'checkbox', checked: false }),

@@ -73,6 +73,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const cell = document.querySelector<HTMLInputElement>('#s-cell')!
   const oCell = document.querySelector<HTMLOutputElement>('#o-cell')!
   const grid = document.querySelector<HTMLInputElement>('#s-grid')!
+  const tuning = document.querySelector<HTMLInputElement>('#s-tuning')!
   const skeleton = document.querySelector<HTMLInputElement>('#s-skeleton')!
   const quality = document.querySelector<HTMLInputElement>('#s-quality')!
   const profiler = document.querySelector<HTMLInputElement>('#s-profiler')!
@@ -143,6 +144,10 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
     s.showGrid = grid.checked
   })
   // tuning view: paint the circles of the skeleton over the drawn body
+  // dev view: draw what the sliders change over the character
+  tuning.addEventListener('change', () => {
+    s.showTuning = tuning.checked
+  })
   skeleton.addEventListener('change', () => {
     s.showSkeleton = skeleton.checked
   })

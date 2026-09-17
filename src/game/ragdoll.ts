@@ -246,6 +246,24 @@ const nameOf = (chain: Chain, i: number): string =>
 const linkKindOf = (part: PartId): BodyKind =>
   part === 'armL' || part === 'armR' ? 'arm' : part === 'legL' || part === 'legR' ? 'leg' : part
 
+/** The tuning kind of a whole chain ('leg' for both legs). */
+const chainKind = (chain: Chain): BodyKind => linkKindOf(chain.part)
+
+/**
+ * A rigid bone: circles that keep their shape.
+ *
+ * Distance links are not enough for this. Three circles in a row are a
+ * degenerate triangle: the solver may leave a link a quarter of a pixel long
+ * and the angle between them swings by thirty degrees (measured) - which is
+ * exactly "the legs ripple like a wave" the game complained about. So a bone is
+ * fitted to its rest shape once per substep: the whole bone is moved as one
+ * rigid piece (translation + one rotation, no stretching at all), which also
+ * keeps the momentum, so it cannot pump energy into the frame.
+ */
+interface Bone {
+  points: Array<{ i: number; mass: number; rx: number; ry: number }>
+}
+
 /** Every circle name, in layout order - useful for tests and tooling. */
 export const POINT_NAMES: readonly string[] = CHAINS.flatMap((chain) =>
   chain.at.map((_, i) => nameOf(chain, i)),
@@ -292,6 +310,8 @@ export class Ragdoll {
    * intersect (the two legs, a limb and the body, the head and the body).
    */
   private readonly contacts: Array<[number, number, boolean]> = []
+  /** Rigid bones: circles straightened around their hinge every iteration. */
+  private readonly bones: Bone[] = []
   /**
    * How much harder the force point has to be pushed than the whole body, so
    * that the thrust setting means "the acceleration of the body".
@@ -333,23 +353,50 @@ export class Ragdoll {
 
       this.sections.push({ part: chain.part, from, count: chain.at.length })
 
-      // chain links: neighbouring circles, elastic, never overlapping
+      // A LEG is two bones hinged at the knee (circle 2 of five): the thigh
+      // (0,1 and the hinge) and the shin (3,4 and the hinge). Their shape is
+      // kept rigid by `straighten`, so the leg folds at the knee and nowhere
+      // else.
+      if (chainKind(chain) === 'leg') {
+        const knee = from + 2
+        // TWO bones, both turning around the knee: the thigh above it and the
+        // shin below it - so the leg folds exactly at the knee and nowhere else
+        this.bones.push(this.makeBone([knee, from, from + 1]))
+        this.bones.push(this.makeBone([knee, from + 3, from + 4]))
+      }
+
+      // chain links: neighbouring circles, elastic, never overlapping.
+      // The links of a LEG are rigid instead: with elastic links a "bone" can
+      // still bend, because a chain of stretchy links bows when it is pushed
+      // (measured: the thigh bent by 38 degrees however stiff its braces were).
+      // A leg is two bones and a knee - so its links are bones.
       for (let i = 1; i < chain.at.length; i++) {
-        this.addLink(from + i - 1, from + i, linkKindOf(chain.part), true)
+        this.addLink(from + i - 1, from + i, linkKindOf(chain.part), true, false, chainKind(chain) === 'leg')
       }
 
       // braces inside the chain: circles i-2 and i are pulled back to the
       // distance they have at rest, so a chain that gets bent springs straight
       // again. `LIMITS.bend` is an angle; the brace works on distances, so the
       // allowed shortening is cos(bend/2).
+      //
+      // A LEG is two bones with ONE hinge: the braces that stay inside a bone
+      // (0-2 and 2-4 of five circles) are welded, and only the brace across the
+      // knee (1-3) may fold - so the leg folds at the knee instead of rippling.
       const limb = linkKindOf(chain.part)
       const fold = Math.cos(LIMITS.bend[limb] / 2)
       for (let i = 2; i < chain.at.length; i++) {
-        this.addBrace(from + i - 2, from + i, fold, 'brace')
+        const insideBone = limb === 'leg' && i % 2 === 0
+        if (insideBone) {
+          this.addBrace(from + i - 2, from + i, 1, 'brace', 1, true)
+        } else {
+          const knee = limb === 'leg'
+          this.addBrace(from + i - 2, from + i, knee ? Math.cos(LIMITS.knee / 2) : fold, 'brace')
+        }
       }
-      // and one from end to end, so a limb cannot bow out sideways while every
-      // individual link happens to sit at its rest length
-      if (chain.at.length >= 4) {
+      // A brace from end to end stops a limb bowing out sideways. A leg does not
+      // need it (its bones cannot bow) and it would lock the knee, so it is
+      // only added where the chain is elastic.
+      if (chain.at.length >= 4 && limb !== 'leg') {
         this.addBrace(from, from + chain.at.length - 1, fold, 'brace')
       }
 
@@ -506,23 +553,83 @@ export class Ragdoll {
     }
   }
 
+  /** Build a bone from the circles that belong to it. */
+  private makeBone(members: number[]): Bone {
+    let m = 0
+    let x = 0
+    let y = 0
+    for (const i of members) {
+      const mass = 1 / this.points[i].im
+      m += mass
+      x += this.points[i].x * mass
+      y += this.points[i].y * mass
+    }
+    const cx = x / m
+    const cy = y / m
+    return {
+      points: members.map((i) => ({
+        i,
+        mass: 1 / this.points[i].im,
+        rx: this.points[i].x - cx,
+        ry: this.points[i].y - cy,
+      })),
+    }
+  }
+
+  /**
+   * Fit a bone to its rest shape: one translation and one rotation, no
+   * stretching. The circles end up exactly where they were built relative to
+   * each other, and because the fit is around the bone's own centre of mass it
+   * preserves momentum - so it cannot pump energy into the frame (a version
+   * that turned the bone around its hinge instead made the whole simulation
+   * explode).
+   */
+  private straighten(bone: Bone): void {
+    let m = 0
+    let x = 0
+    let y = 0
+    for (const p of bone.points) {
+      m += p.mass
+      x += this.points[p.i].x * p.mass
+      y += this.points[p.i].y * p.mass
+    }
+    const cx = x / m
+    const cy = y / m
+    let dot = 0
+    let cross = 0
+    for (const p of bone.points) {
+      const q = this.points[p.i]
+      dot += p.mass * (p.rx * (q.x - cx) + p.ry * (q.y - cy))
+      cross += p.mass * (p.rx * (q.y - cy) - p.ry * (q.x - cx))
+    }
+    const angle = Math.atan2(cross, dot)
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    for (const p of bone.points) {
+      const q = this.points[p.i]
+      q.x = cx + p.rx * cos - p.ry * sin
+      q.y = cy + p.rx * sin + p.ry * cos
+    }
+  }
   /**
    * A hidden spring that gives the frame its shape: it pulls the two circles
    * back to the distance they have at rest, and cannot be pushed past the
    * given band. `kind` says how strong it is (see LINK.compliance).
    */
-  private addBrace(a: number, b: number, fold: number, kind: ShapeKind, grow = 1.02): void {
+  private addBrace(a: number, b: number, fold: number, kind: ShapeKind, grow = 1.02, rigid = false): void {
     const p1 = this.points[a]
     const p2 = this.points[b]
     const straight = Math.hypot(p2.x - p1.x, p2.y - p1.y)
-    const compliance = LINK.compliance[kind]
+    const compliance = rigid ? 0 : LINK.compliance[kind]
     this.links.push({
       a,
       b,
       rest: straight,
       min: straight * fold,
       max: straight * grow,
-      joint: true,
+      // a brace that stays inside a bone is welded, not a joint: the grip must
+      // not apply to it, or the bone would bend again
+      joint: !rigid,
       /** Base fold limit; the elasticity deepens it (see setElasticity). */
       fold,
       stretch: grow,
@@ -543,6 +650,7 @@ export class Ragdoll {
     kind: BodyKind,
     draw: boolean,
     attach = false,
+    rigid = false,
   ): Link {
     const p1 = this.points[a]
     const p2 = this.points[b]
@@ -562,8 +670,8 @@ export class Ragdoll {
      * what used to turn the head into an oval.
      */
     const width = 2 * (attach ? Math.min(p1.r, p2.r) : Math.max(p1.r, p2.r))
-    const stretch = LINK.stretch[kind]
-    const compliance = LINK.compliance[kind]
+    const stretch = rigid ? 1 : LINK.stretch[kind]
+    const compliance = rigid ? 0 : LINK.compliance[kind]
     const link: Link = {
       a,
       b,
@@ -613,6 +721,20 @@ export class Ragdoll {
    */
   setJointGrip(fraction: number): void {
     this.grip = SIM.jointGrip * Math.max(0, Math.min(1, fraction))
+  }
+
+  /**
+   * Where the muscles want every circle to be: the target skeleton (the stance,
+   * upright, anchored at the centre of mass). Used by the tuning view.
+   */
+  stanceTargets(): Array<{ x: number; y: number }> {
+    const c = this.center()
+    return this.points.map((_, i) => ({ x: c.x + this.poseX[i], y: c.y + this.poseY[i] }))
+  }
+
+  /** How hard the joints hold their angle right now, in px per substep. */
+  get jointGripPx(): number {
+    return this.grip
   }
 
   /** Index of a named circle. */
@@ -704,12 +826,18 @@ export class Ragdoll {
     for (const link of this.links) link.lambda = 0
     this.hits.clear()
     for (let i = 0; i < SIM.solverIterations; i++) {
-      // walls first: the links get the last word, because a stretched link is
-      // far more visible than a circle a fraction of a pixel inside a wall
+      // Order matters, and it is decided by what is most visible:
+      // walls first, then the contacts, and the LINKS last - a bone must come
+      // out of a substep straight, otherwise the contacts and the wall clamps
+      // leave it bent (measured: the thigh bent by 22-30 degrees even though
+      // every link inside it is rigid).
       this.clampToWalls(bounds)
-      for (const link of this.links) this.satisfy(link, dt)
       this.separate()
+      for (const link of this.links) this.satisfy(link, dt)
     }
+
+    // 3b. Fit every bone to its rest shape: one rigid move, momentum kept
+    for (const bone of this.bones) this.straighten(bone)
 
     // 4. Damp the shape springs: a spring alone would swing for ever
     for (const link of this.links) {

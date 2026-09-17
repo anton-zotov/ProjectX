@@ -31,6 +31,7 @@ export interface GameSettings {
   elasticity: number // how rubbery the frame is (1 = the tuned default)
   stance: number // 0..1: how hard the muscles hold the stance
   jointGrip: number // 0..1: how hard the joints hold their angle
+  showTuning: boolean // paint what the sliders change over the character
 }
 
 export const defaultSettings = (): GameSettings => ({
@@ -47,6 +48,7 @@ export const defaultSettings = (): GameSettings => ({
   elasticity: 1,
   stance: 0, // pure, universal ragdoll physics; the muscles are an experiment (see docs/VISION.md)
   jointGrip: 0.25, // 0 = springs only (floppy); 1 = joints hold, the frame stands
+  showTuning: true, // the sliders are drawn on the figure while we tune
 })
 
 /* ------------------------------------------------------------------ *
@@ -89,6 +91,14 @@ const RAIL_MIN_DIST = 28 // world px from the camera below which rails degenerat
 const BODY_COLOR = BODY.color
 /** Colour of the circles when the skeleton is shown (testing view). */
 const SKELETON_COLOR = '#9aa4ad'
+/** Tuning view: the room a link has to stretch (elasticity). */
+const ELASTIC_COLOR = '#5ec8ff'
+/** Tuning view: a joint that is holding its angle. */
+const GRIP_COLOR = '#ffb347'
+/** Tuning view: a joint that is slipping right now. */
+const SLIP_COLOR = '#ff5f56'
+/** Tuning view: where the muscles want a circle to be. */
+const MUSCLE_COLOR = '#c58cff'
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
@@ -349,12 +359,73 @@ export class ArenaScene implements Scene {
       ctx.fill()
     }
 
+    // 3. what the admin sliders are doing, drawn over the character
+    if (this.settings.showTuning) this.renderTuning(ctx)
+
     ctx.restore()
   }
 
-  /* ------------------------------------------------------------------ *
-   *  The gridded 3D volume (additive glow)
-   * ------------------------------------------------------------------ */
+  /**
+   * The tuning view: draws what the three sliders change, right on the figure.
+   *
+   *   elasticity  a halo around every link, as wide as the stretch it allows
+   *   joint grip  a bone over every joint, thicker the harder it grips, and
+   *               red while that joint is slipping
+   *   muscles     a ghost circle where the target skeleton wants each circle
+   */
+  private renderTuning(ctx: CanvasRenderingContext2D): void {
+    const r = this.ragdoll
+    const grip = this.settings.jointGrip
+    const gripPx = r.jointGripPx
+
+    // elasticity: the room a link has to stretch (a halo around the body)
+    for (const link of r.drawn) {
+      const room = link.max / link.rest - 1
+      if (room <= 0.005) continue
+      const p1 = r.points[link.a]
+      const p2 = r.points[link.b]
+      ctx.strokeStyle = ELASTIC_COLOR
+      ctx.globalAlpha = Math.min(0.5, room * 8)
+      ctx.lineWidth = link.width + 1.5 + room * 26
+      ctx.beginPath()
+      ctx.moveTo(p1.x, p1.y)
+      ctx.lineTo(p2.x, p2.y)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+
+    // joint grip: a bone over every joint, fatter the harder it holds
+    if (grip > 0) {
+      for (const link of r.links) {
+        if (!link.joint) continue
+        const p1 = r.points[link.a]
+        const p2 = r.points[link.b]
+        const span = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+        const slipping = Math.abs(span - link.rest) > gripPx + 0.05
+        ctx.strokeStyle = slipping ? SLIP_COLOR : GRIP_COLOR
+        ctx.globalAlpha = slipping ? 1 : 0.3 + 0.45 * grip
+        ctx.lineWidth = 1 + 5 * grip
+        ctx.beginPath()
+        ctx.moveTo(p1.x, p1.y)
+        ctx.lineTo(p2.x, p2.y)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+    }
+
+    // muscles: where the target skeleton wants each circle
+    if (this.settings.stance > 0) {
+      ctx.globalAlpha = Math.min(0.7, 0.25 + this.settings.stance * 0.5)
+      ctx.strokeStyle = MUSCLE_COLOR
+      ctx.lineWidth = 1.2
+      for (const t of r.stanceTargets()) {
+        ctx.beginPath()
+        ctx.arc(t.x, t.y, 2, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+    }
+  }
   private renderSpace(ctx: CanvasRenderingContext2D): void {
     const lx = this.camX
     const ly = this.camY
