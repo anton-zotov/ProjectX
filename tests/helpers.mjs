@@ -284,6 +284,8 @@ export function installDom({ width = 1000, height = 600 } = {}) {
     '#o-thrust': makeElement('output'),
     '#s-elastic': makeElement('input', { value: '1' }),
     '#o-elastic': makeElement('output'),
+    '#s-grip': makeElement('input', { value: '0.25' }),
+    '#o-grip': makeElement('output'),
     '#s-gravity': makeElement('input', { value: '180' }),
     '#o-gravity': makeElement('output'),
     '#s-stance': makeElement('input', { value: '0' }),

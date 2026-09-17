@@ -210,6 +210,7 @@ test('admin panel', async (t) => {
     assert.equal(el('#o-thrust').textContent, '1900')
     assert.equal(el('#o-elastic').textContent, '100 %')
     assert.equal(el('#o-stance').textContent, '0 %')
+    assert.equal(el('#o-grip').textContent, '25 %')
     assert.equal(el('#o-gravity').textContent, '180')
     assert.equal(el('#o-color').textContent, '1.0')
     assert.equal(el('#o-size').textContent, '3 × 2')

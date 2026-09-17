@@ -47,6 +47,23 @@ export const SIM = {
    */
   twinPush: 0.25,
   /**
+   * What holds a joint at its angle - the "grip" of a posable doll.
+   *
+   * A spring always yields a little under a load, and along a chain those
+   * little yields add up until the frame folds (measured: our elastic frame
+   * never stands, at any stiffness, while a welded one stands for ever). A
+   * doll's limbs stay posed because of FRICTION in the wire joints, not
+   * because the wire is springy.
+   *
+   * So a joint link (the brace that sets an angle) is corrected rigidly, but
+   * by at most `jointGrip` px per substep. Under a static load that is far
+   * more than enough, so the joint holds; a hard hit moves it further than one
+   * substep can correct, so the joint slips - and then keeps being pulled
+   * back, which is how a limb comes home again. The admin slider scales this
+   * from 0 (a floppy ragdoll) to 100 % (a statue).
+   */
+  jointGrip: 4,
+  /**
    * How elastic the whole frame is; 1 = the tuning below exactly as written.
    * It scales the stretch allowance of every link AND softens its spring, so
    * the admin slider can be dragged while the character is flying and the

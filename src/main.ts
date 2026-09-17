@@ -57,6 +57,8 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const oThrust = document.querySelector<HTMLOutputElement>('#o-thrust')!
   const elastic = document.querySelector<HTMLInputElement>('#s-elastic')!
   const oElastic = document.querySelector<HTMLOutputElement>('#o-elastic')!
+  const grip = document.querySelector<HTMLInputElement>('#s-grip')!
+  const oGrip = document.querySelector<HTMLOutputElement>('#o-grip')!
   const gravity = document.querySelector<HTMLInputElement>('#s-gravity')!
   const oGravity = document.querySelector<HTMLOutputElement>('#o-gravity')!
   const stance = document.querySelector<HTMLInputElement>('#s-stance')!
@@ -78,6 +80,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const syncOutputs = (): void => {
     oThrust.textContent = String(s.thrust)
     oGravity.textContent = String(s.gravity)
+    oGrip.textContent = `${Math.round(s.jointGrip * 100)} %`
     oStance.textContent = `${Math.round(s.stance * 100)} %`
     oElastic.textContent = `${Math.round(s.elasticity * 100)} %`
     oColor.textContent = s.colorSpeed.toFixed(1)
@@ -100,6 +103,11 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   // how rubbery the whole frame is: it applies at once, mid-flight
   elastic.addEventListener('input', () => {
     s.elasticity = Number(elastic.value)
+    syncOutputs()
+  })
+  // how hard the joints hold their angle (0 = floppy springs, 1 = a statue)
+  grip.addEventListener('input', () => {
+    s.jointGrip = Number(grip.value)
     syncOutputs()
   })
   gravity.addEventListener('input', () => {

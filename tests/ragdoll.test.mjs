@@ -390,6 +390,68 @@ test('the stance gets him up and holds him, and can be switched off', () => {
   assert.ok(on < off * 0.5, `the muscles also act in the air ( px vs )`)
 })
 
+test('the joint grip holds the frame up and costs nothing in flight', () => {
+  const standFor = (grip) => {
+    const r = onFloor()
+    r.setJointGrip(grip)
+    let ticks = 0
+    for (let i = 0; i < 60 * 6; i++) {
+      run(r, 1, { thrustX: 0, thrustY: 0, gravity: DEFAULTS.gravity }, ARENA)
+      if (i % 60 === 59 && ARENA.h - r.head.y > 40) ticks++
+    }
+    return ticks
+  }
+
+  assert.ok(standFor(0) < 5, 'a frame of springs only topples')
+  assert.equal(standFor(0.25), 6, 'with the joints holding their angle it stands')
+
+  // Unlike a muscle pulling towards a stance, the grip does not slow the flight
+  // down: it holds the pose, it does not push the character back.
+  const flight = (grip) => {
+    const r = new Ragdoll(ARENA.w / 2, ARENA.h / 2)
+    r.setJointGrip(grip)
+    const x0 = r.head.x
+    for (let i = 0; i < 60 * 3; i++) {
+      run(r, 1, { thrustX: DEFAULTS.thrust, thrustY: 0, gravity: 0 }, ARENA)
+    }
+    return r.head.x - x0
+  }
+  const loose = flight(0)
+  const held = flight(0.25)
+  assert.ok(loose > 300, `the frame flies (${loose.toFixed(0)} px)`)
+  assert.ok(
+    Math.abs(held - loose) / loose < 0.05,
+    `and the grip does not hold it back (${held.toFixed(0)} vs ${loose.toFixed(0)} px)`,
+  )
+
+  // ...but a hard hit still throws a limb aside: it stays a ragdoll, not a statue
+  const bent = (grip) => {
+    const r = new Ragdoll(2000, 2000)
+    r.setJointGrip(grip)
+    const attitude = () => {
+      const p1 = r.point('armL0')
+      const p2 = r.point('armL3')
+      const c = r.point('torso0')
+      const d = r.point(PELVIS)
+      const v1 = { x: p2.x - p1.x, y: p2.y - p1.y }
+      const v2 = { x: d.x - c.x, y: d.y - c.y }
+      return Math.atan2(v1.x * v2.y - v1.y * v2.x, v1.x * v2.x + v1.y * v2.y)
+    }
+    const rest = attitude()
+    r.point('armL3').px -= 25
+    let worst = 0
+    for (let i = 0; i < 60; i++) {
+      run(r, 1, still(NO_GRAVITY))
+      let swing = ((attitude() - rest) * 180) / Math.PI
+      while (swing > 180) swing -= 360
+      while (swing < -180) swing += 360
+      worst = Math.max(worst, Math.abs(swing))
+    }
+    return worst
+  }
+  assert.ok(bent(0.25) > 30, `a hard hit still throws the limb aside (${bent(0.25).toFixed(0)} degrees)`)
+})
+
 test('gravity pulls the body down; zero gravity does not', () => {
   const falling = new Ragdoll(2000, 2000)
   const y0 = falling.center().y

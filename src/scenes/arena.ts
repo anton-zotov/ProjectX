@@ -30,6 +30,7 @@ export interface GameSettings {
   showSkeleton: boolean // paint the circles over the body (tuning view)
   elasticity: number // how rubbery the frame is (1 = the tuned default)
   stance: number // 0..1: how hard the muscles hold the stance
+  jointGrip: number // 0..1: how hard the joints hold their angle
 }
 
 export const defaultSettings = (): GameSettings => ({
@@ -45,6 +46,7 @@ export const defaultSettings = (): GameSettings => ({
   showSkeleton: true,
   elasticity: 1,
   stance: 0, // pure, universal ragdoll physics; the muscles are an experiment (see docs/VISION.md)
+  jointGrip: 0.25, // 0 = springs only (floppy); 1 = joints hold, the frame stands
 })
 
 /* ------------------------------------------------------------------ *
@@ -135,6 +137,8 @@ export class ArenaScene implements Scene {
   private builtScale = 0
   /** Elasticity the current ragdoll was last told about. */
   private builtElasticity = 0
+  /** Joint grip last handed to the ragdoll. */
+  private builtGrip = -1
 
   constructor(settings: GameSettings) {
     this.settings = settings
@@ -160,6 +164,8 @@ export class ArenaScene implements Scene {
     this.builtElasticity = this.settings.elasticity
     const body = new Ragdoll(this.worldW / 2, this.worldH / 2, this.settings.bodyScale)
     body.setElasticity(this.settings.elasticity)
+    body.setJointGrip(this.settings.jointGrip)
+    this.builtGrip = this.settings.jointGrip
     return body
   }
 
@@ -198,6 +204,11 @@ export class ArenaScene implements Scene {
     if (this.builtElasticity !== this.settings.elasticity) {
       this.builtElasticity = this.settings.elasticity
       this.ragdoll.setElasticity(this.settings.elasticity)
+    }
+    // the grip is live as well: drag it and watch the frame stop sagging
+    if (this.builtGrip !== this.settings.jointGrip) {
+      this.builtGrip = this.settings.jointGrip
+      this.ragdoll.setJointGrip(this.settings.jointGrip)
     }
     this.colorTime += dt * this.settings.colorSpeed
 

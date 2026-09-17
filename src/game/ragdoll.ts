@@ -51,6 +51,11 @@ export interface Link {
   stretch: number
   /** Base fold limit of a shape spring; the elasticity deepens it. */
   fold?: number
+  /**
+   * True for the links that set an ANGLE (a brace or a limb's attitude
+   * spring). Those are the joints, and they can hold their angle by grip.
+   */
+  joint?: boolean
   /** XPBD compliance (1 / stiffness) at elasticity 1; 0 = rigid. */
   complianceBase: number
   /** The compliance in force right now (softened by the elasticity). */
@@ -294,6 +299,12 @@ export class Ragdoll {
   private readonly pushScale: number
   /** Elasticity currently applied to the links (1 = as tuned in config). */
   private elasticity = 0
+  /**
+   * Joint grip in px per substep: how far a joint may be corrected at once.
+   * Big enough and it simply holds its angle (a posed doll); small enough and
+   * a hard hit slips through it. 0 turns every joint back into a spring.
+   */
+  private grip = 0
   /** Rest pose of every circle, in the body's own frame (origin = torso0). */
   private readonly poseX: number[] = []
   private readonly poseY: number[] = []
@@ -511,6 +522,7 @@ export class Ragdoll {
       rest: straight,
       min: straight * fold,
       max: straight * grow,
+      joint: true,
       /** Base fold limit; the elasticity deepens it (see setElasticity). */
       fold,
       stretch: grow,
@@ -592,6 +604,15 @@ export class Ragdoll {
         link.min = link.rest * Math.max(0.05, 1 - (1 - link.fold) * f)
       }
     }
+  }
+
+  /**
+   * How hard the joints hold their angle (the admin slider, 0..1): this is the
+   * grip of a posable doll. 0 = springs only (a floppy ragdoll), 1 = the joints
+   * hold and the frame stands on its own, like a posed figure.
+   */
+  setJointGrip(fraction: number): void {
+    this.grip = SIM.jointGrip * Math.max(0, Math.min(1, fraction))
   }
 
   /** Index of a named circle. */
@@ -810,6 +831,21 @@ export class Ragdoll {
     if (link.compliance <= 0) {
       // a rigid link: project the two circles exactly onto the rest length
       const corr = link.rest - d
+      p1.x -= nx * corr * (w1 / w)
+      p1.y -= ny * corr * (w1 / w)
+      p2.x += nx * corr * (w2 / w)
+      p2.y += ny * corr * (w2 / w)
+      return
+    }
+
+    if (link.joint && this.grip > 0) {
+      // A JOINT, and it has grip: correct it rigidly, but by at most `grip` px
+      // per substep. A static load is corrected completely (so the joint holds
+      // its angle, like the wire in a posed doll), while a hard hit moves it
+      // further than one substep can fix - so it slips, and is then pulled
+      // back step by step.
+      const want = link.rest - d
+      const corr = want > this.grip ? this.grip : want < -this.grip ? -this.grip : want
       p1.x -= nx * corr * (w1 / w)
       p1.y -= ny * corr * (w1 / w)
       p2.x += nx * corr * (w2 / w)
