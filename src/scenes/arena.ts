@@ -413,15 +413,25 @@ export class ArenaScene implements Scene {
       ctx.globalAlpha = 1
     }
 
-    // muscles: where the target skeleton wants each circle
+    // muscles: where the target skeleton wants each circle, and the string the
+    // muscle pulls along - without the strings the targets read as stray circles
+    // floating around the body instead of "he is pulling himself in here"
     if (this.settings.stance > 0) {
       ctx.globalAlpha = Math.min(0.7, 0.25 + this.settings.stance * 0.5)
       ctx.strokeStyle = MUSCLE_COLOR
       ctx.lineWidth = 1.2
-      for (const t of r.stanceTargets()) {
+      const targets = r.stanceTargets()
+      for (const [i, t] of targets.entries()) {
+        const p = r.points[i]
         ctx.beginPath()
         ctx.arc(t.x, t.y, 2, 0, Math.PI * 2)
         ctx.stroke()
+        ctx.globalAlpha *= 0.55
+        ctx.beginPath()
+        ctx.moveTo(p.x, p.y)
+        ctx.lineTo(t.x, t.y)
+        ctx.stroke()
+        ctx.globalAlpha = Math.min(0.7, 0.25 + this.settings.stance * 0.5)
       }
       ctx.globalAlpha = 1
     }

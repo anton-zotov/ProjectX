@@ -501,7 +501,21 @@ export class Ragdoll {
     let pushX = 0
     let pushY = 0
     let sum = 0
-    for (const p of this.points) sum += 1 / p.im
+    // The velocity of the whole body, so the muscle damper can remove the
+    // circles' velocity RELATIVE to the body and not its flight: damping the
+    // absolute velocity turned the slider into a brake (a flying frame lost
+    // 453 px -> 75 px in 3 s at full muscles).
+    let cvx = 0
+    let cvy = 0
+    for (const p of this.points) {
+      const mass = 1 / p.im
+      sum += mass
+      cvx += (p.x - p.px) * mass
+      cvy += (p.y - p.py) * mass
+    }
+    if (sum === 0) return
+    cvx /= sum
+    cvy /= sum
 
     for (let i = 0; i < this.points.length; i++) {
       const p = this.points[i]
@@ -528,10 +542,11 @@ export class Ragdoll {
       pushX += dx * mass
       pushY += dy * mass
 
-      // ...and damp the muscle: without it the pull makes the whole frame buzz
+      // ...and damp the muscle: without it the pull makes the whole frame buzz.
+      // Only the motion RELATIVE to the body is removed.
       if (damp > 0) {
-        const vx = p.x - p.px
-        const vy = p.y - p.py
+        const vx = p.x - p.px - cvx
+        const vy = p.y - p.py - cvy
         p.px += vx * damp
         p.py += vy * damp
       }

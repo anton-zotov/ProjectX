@@ -43,9 +43,12 @@ export const SIM = {
   /**
    * How hard the two limbs of a pair (leg against leg, arm against arm) push
    * each other apart per solver iteration. Gentler than the contact between a
-   * limb and the body: a hard shove there knocks the hips about.
+   * limb and the body: a hard shove there knocks the hips about. 0.25 was too
+   * gentle once the frame kept its speed in flight (the legs sank 1.7 px into
+   * each other at full thrust); 0.4 leaves 0.15 px and the hips still do not
+   * twitch.
    */
-  twinPush: 0.25,
+  twinPush: 0.4,
   /**
    * What holds a joint at its angle - the "grip" of a posable doll.
    *
@@ -184,23 +187,36 @@ export const LINK = {
  * place in it. That pull does straighten the body, because the stance is
  * anchored upright in the WORLD, not to the body.
  *
- * The muscles only work while the feet are near the floor (`reach`), so in the
- * air the character is a pure ragdoll and the thrust still tumbles it.
- * `frequency` is the stiffness (acceleration per px of deviation); `damping`
- * is how much of a circle's velocity relative to the body is removed each
- * substep - without it the pull makes the frame buzz.
+ * The muscles act EVERYWHERE, in the air too - there are no rules that change
+ * near the floor (that version was written and rejected as a crutch). They pull
+ * towards the stance anchored at the body's own centre of mass, so holding the
+ * pose costs the flight nothing: measured 469 px in 3 s at full muscles against
+ * 453 px with the muscles off.
+ *
+ * `frequency` is the stiffness (acceleration per px of deviation); `damping` is
+ * how much of a circle's velocity RELATIVE TO THE BODY is removed each substep -
+ * without it the pull makes the frame buzz. Damping the absolute velocity
+ * instead turns the slider into a brake (measured: a flying frame lost
+ * 453 px -> 75 px in 3 s), which is exactly what made the slider unusable.
  */
 export const STAND = {
   frequency: 150,
   damping: 0.06,
   reach: 16,
   gain: {
+    /**
+     * How hard each part is pulled towards its place in the stance. The legs
+     * used to be the strongest (1.2) - and that is exactly what squeezed the
+     * two legs into each other (2.03 px overlap in hard flight, measured):
+     * the muscles dragged them onto targets that sit closer together than the
+     * twin contact allows. 0.8 keeps the stance and leaves the legs apart.
+     */
     head: 0.35,
     torso: 1,
     armL: 0.5,
     armR: 0.5,
-    legL: 1.2,
-    legR: 1.2,
+    legL: 0.8,
+    legR: 0.8,
   },
 }
 
