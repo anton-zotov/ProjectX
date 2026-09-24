@@ -39,6 +39,7 @@ export const SIM = {
    * `contactReach` says how far apart (in radii) a pair may be and still be
    * checked every iteration - only close pairs are kept in the list.
    */
+  contactReach: 3.5,
   /**
    * How hard the two limbs of a pair (leg against leg, arm against arm) push
    * each other apart per solver iteration. Gentler than the contact between a
@@ -47,6 +48,7 @@ export const SIM = {
    * each other at full thrust); 0.4 leaves 0.15 px and the hips still do not
    * twitch.
    */
+  twinPush: 0.4,
   /**
    * What holds a joint at its angle - the "grip" of a posable doll.
    *
@@ -126,8 +128,10 @@ export const BODY = {
  * `stretch` is the hard limit on the other side, as a factor of the rest
  * length.
  *
- * `bend` is the spring that gives the frame its SHAPE: it keeps a chain
- *   straight (circles i and i+2 are pulled back to the straight distance).
+ * `bend` / `pose` are the springs that give the frame its SHAPE:
+ *   `bend` keeps a chain straight (circles i and i+2 are pulled back to the
+ *   straight distance), `pose` does the same for a whole limb (its second
+ *   circle is pulled back towards the attitude it has at rest).
  * Both are two-sided springs, so a limb that gets knocked aside swings back
  * on its own - in zero gravity the frame returns to its rest pose.
  * The limits are only a safety net; the springs do the work.
@@ -140,8 +144,7 @@ export const LINK = {
     leg: 0.00003,
     attach: 0.00002, // where a limb meets the body
     brace: 0.00008, // hidden braces that keep a chain straight
-    hinge: 0.00025, // the spring of an elbow or a knee: it gives and returns
-    pose: 0.0003, // the one attitude spring a limb hangs on
+    pose: 0.0003, // the springs that hold a limb in its attitude
   },
   /**
    * How far a link can be squeezed from rest (rest = touching * (1 + give)).
@@ -170,7 +173,7 @@ export const LINK = {
    * air drag alone is far too weak to settle it (measured: the arm was still
    * rotating after eight seconds in zero gravity).
    */
-  damping: { brace: 0.012, pose: 0.02, hinge: 0.02 },
+  damping: { brace: 0.012, pose: 0.02 },
 }
 
 /*
@@ -205,6 +208,13 @@ export const LIMITS = {
     leg: 0.3,
     attach: 0,
   },
+  swing: {
+    head: 0,
+    torso: 0,
+    arm: 1.2, // arms: they can be knocked aside, not wrapped around the body
+    leg: 0.8,
+    attach: 0,
+  },
   /**
    * The neck: how much the link from the second body circle to the head may
    * shorten (and how far it may stretch). This is what stops the head from
@@ -218,20 +228,13 @@ export const LIMITS = {
    * that builds and folds it is the same for every chain, arms and legs alike.
    */
   hinge: { head: 0, torso: 0.25, arm: 1.2, leg: 1.7, attach: 0 },
-  /**
-   * How far a limb may swing away from the attitude it is built in, in radians -
-   * the window of the ONE attitude spring each limb hangs on. Generous on
-   * purpose: the arms must be able to go up over the shoulders (they were
-   * clamped below them while a second spring pinned the attitude down).
-   */
-  swing: { head: 0, torso: 0, arm: 2.6, leg: 1.4, attach: 0 },
   neckFold: 0.94,
   neckGrow: 1.01,
 }
 
 /** Links that carry the body: an elastic distance with hard limits. */
 export type BodyKind = 'head' | 'torso' | 'arm' | 'leg' | 'attach'
-export type ShapeKind = 'brace' | 'pose' | 'hinge'
+export type ShapeKind = 'brace' | 'pose'
 export type LinkKind = BodyKind | ShapeKind
 
 /** Defaults for the player-tunable values (mirrored in the admin panel). */

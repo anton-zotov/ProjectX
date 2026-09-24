@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>ProjectX — что лежит на GitHub</title>
+<style>
+  :root { color-scheme: dark }
+  body { margin: 0; padding: 32px 20px 64px; background: #0d0f14; color: #d8e6dd;
+         font: 14px/1.55 ui-monospace, Consolas, monospace }
+  h1 { font-size: 20px; margin: 0 0 6px; color: #9fe8c6 }
+  h2 { font-size: 15px; margin: 34px 0 10px; color: #9fe8c6; letter-spacing: .5px }
+  .sub { opacity: .7; margin-bottom: 26px }
+  .wrap { max-width: 1000px; margin: 0 auto }
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px }
+  .card { background: #121820; border: 1px solid #1f2b24; border-radius: 10px; padding: 12px 14px; min-width: 190px }
+  .card b { display: block; color: #9fe8c6; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; opacity: .8; margin-bottom: 4px }
+  .card span { font-size: 17px }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #1b2320; vertical-align: top }
+  th { color: #7fa892; font-weight: 400; font-size: 12px; text-transform: uppercase; letter-spacing: 1px }
+  td.n { opacity: .45; width: 34px }
+  td.date { white-space: nowrap; opacity: .8 }
+  td.muted { opacity: .55 }
+  code { color: #ffd479 }
+  .branch { border-left: 3px solid #3fe09b; padding-left: 12px; margin-top: 26px }
+  .branch.main { border-color: #5ec8ff }
+  .note { opacity: .75 }
+  .local td.note { opacity: .8; max-width: 620px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ProjectX — что лежит на GitHub</h1>
+  <div class="sub">
+    Репозиторий <a href="https://github.com/anton-zotov/ProjectX" style="color:#5ec8ff">anton-zotov/ProjectX</a>,
+    публичный. Страница собрана 24.09.2026 20:10 прямо из GitHub API —
+    это не мои воспоминания, а факты репозитория.
+  </div>
+
+  <div class="cards">
+    <div class="card"><b>веток</b><span>2</span></div>
+    <div class="card"><b>коммитов всего</b><span>19</span></div>
+    <div class="card"><b>ветка по умолчанию</b><span>main</span></div>
+    <div class="card"><b>создан</b><span>07.09.2026 21:30</span></div>
+    <div class="card"><b>последний push</b><span>18.09.2026 21:32</span></div>
+    <div class="card"><b>тегов</b><span>0</span></div>
+  </div>
+
+  <div class="note">
+    Смысл веток: <code>main</code> — «полка» с тем, что считается нормальным
+    состоянием; <code>playground</code> — где идут опыты (все правки физики я
+    складывал сюда, чтобы не портить main). Коммит = одна законченная мысль.
+  </div>
+
+  
+  <div class="branch main">
+    <h2>main (по умолчанию)</h2>
+    <table>
+      <tr><th>#</th><th>sha</th><th>когда</th><th>что сделано</th><th>кто</th></tr>
+      <tr>
+      <td class="n">3</td>
+      <td><code>124c0bb</code></td>
+      <td class="date">15.09.2026 22:55</td>
+      <td>Ragdoll body: 24-circle skeleton with elastic joints, self-collision, neck thrust, admin tuning (elasticity slider), 58 tests</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">2</td>
+      <td><code>2415df2</code></td>
+      <td class="date">13.09.2026 19:38</td>
+      <td>3D grid version: field 3x2 screens with walls, admin panel, fps/profiler, tests</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">1</td>
+      <td><code>3963d90</code></td>
+      <td class="date">07.09.2026 21:31</td>
+      <td>Initial commit: Vite + TypeScript 2D game boilerplate</td>
+      <td class="muted">Pan Anton</td>
+    </tr>
+    </table>
+  </div>
+
+  <div class="branch ">
+    <h2>playground </h2>
+    <table>
+      <tr><th>#</th><th>sha</th><th>когда</th><th>что сделано</th><th>кто</th></tr>
+      <tr>
+      <td class="n">16</td>
+      <td><code>f9a46da</code></td>
+      <td class="date">18.09.2026 21:32</td>
+      <td>docs: a consolidated summary of the project - what worked, what did not, and why</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">15</td>
+      <td><code>f367456</code></td>
+      <td class="date">18.09.2026 18:49</td>
+      <td>docs: the before/after of the simpler skeleton, and the contacts trade-off</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">14</td>
+      <td><code>ceddbf4</code></td>
+      <td class="date">18.09.2026 18:25</td>
+      <td>simpler joints: two bones a limb, free arms, no self-collision, elastic hinges</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">13</td>
+      <td><code>5ac5ad0</code></td>
+      <td class="date">17.09.2026 22:36</td>
+      <td>removed the muscles: the stance comes from the joint grip alone</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">12</td>
+      <td><code>8ccd5ca</code></td>
+      <td class="date">17.09.2026 22:26</td>
+      <td>one chain model for every limb: bones plus a hinge, driven by data - an arm is a leg with other numbers</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">11</td>
+      <td><code>523690e</code></td>
+      <td class="date">17.09.2026 21:56</td>
+      <td>the main rule of the project: the physics is universal, with two tests that guard it</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">10</td>
+      <td><code>fc0de13</code></td>
+      <td class="date">17.09.2026 21:43</td>
+      <td>the admin panel fits: name and value on one line, the track under them, plus a layout test</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">9</td>
+      <td><code>dc513fa</code></td>
+      <td class="date">17.09.2026 21:21</td>
+      <td>muscles no longer brake the flight: damp relative velocity, softer leg pull, stiffer twin push</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">8</td>
+      <td><code>b5470e2</code></td>
+      <td class="date">17.09.2026 21:09</td>
+      <td>docs: slider meanings, the tuning view legend, bones and the head on the neck</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">7</td>
+      <td><code>ffa5283</code></td>
+      <td class="date">17.09.2026 21:09</td>
+      <td>bones, grip and the tuning view: joints hold their angle, legs are two bones, head sits on the neck</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">6</td>
+      <td><code>5910bf6</code></td>
+      <td class="date">17.09.2026 20:36</td>
+      <td>Joint grip: a joint link is corrected rigidly but at most SIM.jointGrip px per substep (a posable doll holds by friction, not by springs). Stands 6/6 s, flies with zero loss (474 px), limbs still fling 157 deg on a hard hit. Slider in the admin panel, default 25%</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">5</td>
+      <td><code>4301f4e</code></td>
+      <td class="date">15.09.2026 23:40</td>
+      <td>Universal physics back: no floor rules. Findings: elastic joints never stand (any stiffness), a welded frame stands, and joints that hold their angle while the LINK stays elastic stands AND flies at full speed. Plan: joint grip (Coulomb hold + spring return)</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">4</td>
+      <td><code>369932c</code></td>
+      <td class="date">15.09.2026 23:28</td>
+      <td>Stance: target-skeleton muscles (ground-gated), soft twin-limb contact so the legs stay two legs, momentum-correct muscle reaction, admin sliders for elasticity and stance</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">3</td>
+      <td><code>124c0bb</code></td>
+      <td class="date">15.09.2026 22:55</td>
+      <td>Ragdoll body: 24-circle skeleton with elastic joints, self-collision, neck thrust, admin tuning (elasticity slider), 58 tests</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">2</td>
+      <td><code>2415df2</code></td>
+      <td class="date">13.09.2026 19:38</td>
+      <td>3D grid version: field 3x2 screens with walls, admin panel, fps/profiler, tests</td>
+      <td class="muted">ko1pak</td>
+    </tr>
+<tr>
+      <td class="n">1</td>
+      <td><code>3963d90</code></td>
+      <td class="date">07.09.2026 21:31</td>
+      <td>Initial commit: Vite + TypeScript 2D game boilerplate</td>
+      <td class="muted">Pan Anton</td>
+    </tr>
+    </table>
+  </div>
+
+  <h2>Локальные снапшоты версий (в репозиторий не попадают)</h2>
+  <div class="note">
+    Папка <code>versions/</code> исключена из выкладки: это ремейки-«слепки»
+    состояний на диске, чтобы можно было вернуться и сравнить. В Git лежат
+    только исходники игры, тесты и документация.
+  </div>
+  <table class="local">
+    <tr><th>#</th><th>папка</th><th>когда</th><th>чем является</th></tr>
+    <tr><td class="n">1</td><td><code>v1-original</code></td><td class="date">09.09.2026 22:10</td><td class="note">Самый первый вариант — оригинал из репозитория anton-zotov/ProjectX: «Hello, World!» летает по экрану 320×180 и отскакивает, без камеры и 3D-фона.</td></tr>
+<tr><td class="n">2</td><td><code>v2-first-improvements</code></td><td class="date">09.09.2026 22:19</td><td class="note">Первые доработки (по промту «увеличить поле, центрировать камеру, псевдо-3D зелёная сетка»): поле 3×2 экрана с видимой рамкой, камера следует за надписью, уходящая вдаль самосветящаяся сетка.</td></tr>
+<tr><td class="n">3</td><td><code>v2-latest</code></td><td class="date">10.09.2026 22:44</td><td class="note">Финальная версия «надписи»: 3D-решётка-короб, админка, fps, свободная камера, стена вокруг поля.</td></tr>
+<tr><td class="n">4</td><td><code>v3-refactored</code></td><td class="date">10.09.2026 22:44</td><td class="note">Тот же визуал после чистки кода (убраны рудименты и дубли, магические числа — в именованные константы, буферы переиспользуются). Отрисовка побайтово идентична v3.</td></tr>
+<tr><td class="n">5</td><td><code>v4-ragdoll</code></td><td class="date">13.09.2026 20:25</td><td class="note">Этап 1 настоящей игры: вместо надписи — чувачок (ragdoll): скелет из точек и костей, тяга от головы, низкая гравитация, инерция, столкновения со стенами, фиксированный шаг 1/60, `docs/VISION.md` с дорожной картой.</td></tr>
+<tr><td class="n">6</td><td><code>v5-ragdoll-look</code></td><td class="date">13.09.2026 20:39</td><td class="note">Доводка внешнего вида: убрана обводка, тело сплошное белое, голова уменьшена (главная цель для ударов), меньше сочленений в шее/плечах/бёдрах, чувачок на 25 % крупнее относительно экрана.</td></tr>
+<tr><td class="n">7</td><td><code>v6-five-joints</code></td><td class="date">13.09.2026 20:47</td><td class="note">Скелет на ровно 5 сочленений и 12 точек: шея, два плеча, два бедра; рука и нога — одна цельная палка (точек локтя/колена больше нет вообще, поэтому «фаланг» на экране быть не может), голова висит на шее, глаз нет. Четыре</td></tr>
+<tr><td class="n">8</td><td><code>v7-circle-chain</code></td><td class="date">13.09.2026 21:32</td><td class="note">Скелет переделан по описанию оригинала: тело — цепочки кружков, а не палки. 1 круг голова (крупнее тела) + 6 кружков тело + по 4 кружка руки + по 5 кружков ноги = 25 кружков; соседние кружки соединены упругими связями (X</td></tr>
+<tr><td class="n">9</td><td><code>v8-stance-muscles</code></td><td class="date">13.09.2026 21:49</td><td class="note">Каркас держит стойку. Добавлены «мышцы»: каждый кружок тянется к своему месту в вертикальной стойке, но только пока ноги у пола (в воздухе — чистый ragdoll, поэтому кувырки сохранились). Причина: пассивный каркас стоять </td></tr>
+<tr><td class="n">10</td><td><code>v9-elastic-pose</code></td><td class="date">13.09.2026 22:30</td><td class="note">Каркас стал упругим и сам возвращается в позу. Все кружки одного диаметра (кроме головы), руки крепятся к ПЕРВОМУ кружку тела и вытянуты в стороны, цвета — белые капсулы + серые кружки. Мышцы/подгонка стойки убраны: форм</td></tr>
+<tr><td class="n">11</td><td><code>v10-idle-rest</code></td><td class="date">13.09.2026 22:38</td><td class="note">Чувачок успокоился. Пружины позы больше не дерутся со стеной (кружок, лежащий на стене, не тянется — раньше стена отвечала на каждое подшаг-усилие, и каркас дёргался) и стали мягкими (частота 90 → 18), поэтому: без нажат</td></tr>
+<tr><td class="n">12</td><td><code>v11-neck-tight</code></td><td class="date">13.09.2026 22:51</td><td class="note">Шея и более связный каркас. Голова больше не крутится на 360°: кроме несущей связи, от второго кружка тела к голове идёт вторая, тугая (сжатие до 0.94) — это и есть шея, голова кивает в пределах ~±30° (замер: поворот на </td></tr>
+<tr><td class="n">13</td><td><code>v12-legs-apart</code></td><td class="date">13.09.2026 22:57</td><td class="note">Ноги разведены, корпус стал твёрдым. Причина «колбасы» была точно как ты сказал: у ног совпадали угол крепления и направление цепочки, поэтому верх ног шёл параллельно и сливался. Теперь это РАЗНЫЕ числа: крепление бедра</td></tr>
+<tr><td class="n">14</td><td><code>v13-legs-separated</code></td><td class="date">13.09.2026 23:00</td><td class="note">Ноги наконец две ноги. Замер показал: физически ноги независимы (поворот одной на 40° сдвигал вторую на 1°), но на уровне бёдер зазор был −0.6 px — там они и читались одной ногой. Причина геометрическая: оба бедра крепят</td></tr>
+<tr><td class="n">15</td><td><code>v14-self-collision</code></td><td class="date">13.09.2026 23:10</td><td class="note">Кружки больше не пересекаются — вот почему ноги слипались. Связи удерживали только СВЯЗАННЫЕ кружки, а между ногами связи нет, поэтому в полёте они свободно проходили друг сквозь друга и читались одной ногой (замер: пово</td></tr>
+<tr><td class="n">16</td><td><code>v15-neck-force</code></td><td class="date">13.09.2026 23:21</td><td class="note">Тяга приложена к шее, кружки вплотную. Вектор силы переехал с головы на круг шеи (torso0): голова больше не хлещет на своей пружине, а кувырки остались (плечо силы относительно центра масс ~20 px). Так как шея — маленьки</td></tr>
+<tr><td class="n">17</td><td><code>v16-legs-wider</code></td><td class="date">13.09.2026 23:28</td><td class="note">Ноги разводятся шире по умолчанию. Векторы сочленения у таза сдвинуты: крепление бедра 32° → 36°, направление ноги вниз 8° → 14°. Зазор между ногами: 1.2 px у бедра → 14.4 px у стоп (было 0.4 → 8.0). Тест головы стал чес</td></tr>
+<tr><td class="n">18</td><td><code>v17-shorter-torso</code></td><td class="date">13.09.2026 23:44</td><td class="note">Тело короче на кружок (6 → 5) и ползунок упругости. Таз больше не привязан к имени «torso5»: он вычисляется как последний кружок тела (`TORSO_COUNT`), поэтому длина тела теперь меняется одной константой. В админке появил</td></tr>
+<tr><td class="n">19</td><td><code>build-nogrip</code></td><td class="date">17.09.2026 20:35</td><td class="note"></td></tr>
+<tr><td class="n">20</td><td><code>v18-grip-bones</code></td><td class="date">17.09.2026 21:09</td><td class="note">Сцепление суставов, кости в ногах и ползунки на самом чувачке. Три вещи. (1) Сцепление (`jointGrip`): связь сустава правится не «как получится», а не больше чем на N px за подшаг — сустав держит статическую нагрузку, но </td></tr>
+<tr><td class="n">21</td><td><code>v19-muscles-unbraked</code></td><td class="date">17.09.2026 21:21</td><td class="note">Мышцы перестали быть тормозом. Ползунок «мышцы» гасил АБСОЛЮТНУЮ скорость каждого кружка — то есть работал тормозом всего тела (в полёте 453 px → 75 px за 3 с), из-за чего казалось, что чувачок вязнет. Теперь демпфер сни</td></tr>
+<tr><td class="n">22</td><td><code>v20-panel-layout</code></td><td class="date">17.09.2026 21:43</td><td class="note">Админка снова читается: числа не за краем экрана. Строка ползунка была одной линией («название \</td></tr>
+<tr><td class="n">23</td><td><code>v21-universal-physics-rule</code></td><td class="date">17.09.2026 21:55</td><td class="note">Главное правило проекта записано и защищено тестами. Физика общая и универсальная: механизм обязан работать одинаково везде и для всех, никаких правил «здесь поведение другое». Хотим стойку — придумываем физику, из котор</td></tr>
+<tr><td class="n">24</td><td><code>v22-universal-chains</code></td><td class="date">17.09.2026 22:26</td><td class="note">Рука — это нога с другими числами. Ты заметил верное: в ногах «связей меньше», и ползунки их почти не двигают. Замер объяснил почему: у ног 0 упругих звеньев, 6 сваренных, 1 сустав и 2 кости, у рук — 3 упругих звена и 3 </td></tr>
+<tr><td class="n">25</td><td><code>v23-no-muscles</code></td><td class="date">17.09.2026 22:35</td><td class="note">Мышцы удалены целиком. Ползунок «мышцы» и весь механизм вырезаны из проекта по решению автора. История: механизм тянул кружки к целевой позе, сначала он тормозил всё тело (демпфер гасил абсолютную скорость — полёт 453 px</td></tr>
+<tr><td class="n">26</td><td><code>v24-simple-joints</code></td><td class="date">18.09.2026 18:25</td><td class="note">Скелет упрощён, кружки проходят сквозь друг друга. По замечаниям: конечность — ровно две кости и один шарнир, на теле висит на минимуме связей (крепление + одна связь отношения + одна против зеркала); «плечи» и «широкий </td></tr>
+<tr><td class="n">27</td><td><code>build-prev-skeleton</code></td><td class="date">18.09.2026 18:46</td><td class="note"></td></tr>
+<tr><td class="n">28</td><td><code>build-grip0</code></td><td class="date">18.09.2026 20:26</td><td class="note"></td></tr>
+<tr><td class="n">29</td><td><code>v25-new-circles-experiment</code></td><td class="date">22.09.2026 20:48</td><td class="note">Эксперимент со схемой кружков (отложен). 5 позвонков, голова закрывает половину 1-го, плечи внутри 2-го, таз внутри 5-го, руки по 4 кружка (локоть на 2-м), ноги по 6 (колено на 3-м). Замер: рука вверх 180°, подгиб колена</td></tr>
+  </table>
+</div>
+</body>
+</html>
