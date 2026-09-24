@@ -26,6 +26,12 @@
         </label>
 
         <label class="row">
+          <span>сцепление суставов, %</span>
+          <input id="s-grip" type="range" min="0" max="1" step="0.05" value="0.25" />
+          <output id="o-grip">25 %</output>
+        </label>
+
+        <label class="row">
           <span>гравитация</span>
           <input id="s-gravity" type="range" min="0" max="600" step="10" value="180" />
           <output id="o-gravity">180</output>
@@ -58,6 +64,11 @@
           <span>размер ячейки фона</span>
           <input id="s-cell" type="range" min="50" max="300" step="5" value="120" />
           <output id="o-cell">120</output>
+        </label>
+
+        <label class="row check">
+          <input id="s-tuning" type="checkbox" checked />
+          <span>показать, что меняют ползунки</span>
         </label>
 
         <label class="row check">

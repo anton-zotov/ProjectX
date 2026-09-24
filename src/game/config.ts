@@ -41,6 +41,32 @@ export const SIM = {
    */
   contactReach: 3.5,
   /**
+   * How hard the two limbs of a pair (leg against leg, arm against arm) push
+   * each other apart per solver iteration. Gentler than the contact between a
+   * limb and the body: a hard shove there knocks the hips about. 0.25 was too
+   * gentle once the frame kept its speed in flight (the legs sank 1.7 px into
+   * each other at full thrust); 0.4 leaves 0.15 px and the hips still do not
+   * twitch.
+   */
+  twinPush: 0.4,
+  /**
+   * What holds a joint at its angle - the "grip" of a posable doll.
+   *
+   * A spring always yields a little under a load, and along a chain those
+   * little yields add up until the frame folds (measured: our elastic frame
+   * never stands, at any stiffness, while a welded one stands for ever). A
+   * doll's limbs stay posed because of FRICTION in the wire joints, not
+   * because the wire is springy.
+   *
+   * So a joint link (the brace that sets an angle) is corrected rigidly, but
+   * by at most `jointGrip` px per substep. Under a static load that is far
+   * more than enough, so the joint holds; a hard hit moves it further than one
+   * substep can correct, so the joint slips - and then keeps being pulled
+   * back, which is how a limb comes home again. The admin slider scales this
+   * from 0 (a floppy ragdoll) to 100 % (a statue).
+   */
+  jointGrip: 4,
+  /**
    * How elastic the whole frame is; 1 = the tuning below exactly as written.
    * It scales the stretch allowance of every link AND softens its spring, so
    * the admin slider can be dragged while the character is flying and the
@@ -127,7 +153,7 @@ export const LINK = {
    * keeps a little room on its neck.
    */
   give: {
-    head: 0.05,
+    head: 0, // the head sits right on the neck circle, no gap
     torso: 0,
     arm: 0,
     leg: 0,
@@ -150,47 +176,17 @@ export const LINK = {
   damping: { brace: 0.012, pose: 0.02 },
 }
 
-/**
- * The pose springs. Distances alone cannot hold a limb in its attitude: two
- * links have a mirror solution (the limb turned inside out) in which every
- * length is the same again, so the springs see nothing wrong and leave the
- * limb there - and a hard hit can knock it into that solution.
- *
- * So every circle of a limb (and of the head) is also pulled towards the place
- * it has in the rest pose, measured IN THE BODY'S OWN FRAME: the pose turns
- * with the body, but a limb cannot rotate away from it and stay away.
- * `frequency` is the stiffness (acceleration per px of deviation). It is
- * deliberately modest, so a hit still throws the limb aside and the thrust
- * still tumbles the whole body.
+/*
+ * REMOVED: the "muscles" (the second skeleton pulled upright, `STAND` and the
+ * `stance` slider). The idea was to right the frame towards a target pose, and
+ * it never stopped misbehaving: first it braked the whole body (the damper took
+ * the absolute velocity away, 453 px -> 75 px of flight in 3 s), then, fixed,
+ * it dragged circles onto targets regardless of what the frame was doing. The
+ * character stands WITHOUT it: the grip of the joints (SIM.jointGrip) holds the
+ * pose at no cost in flight, and the limbs are bones folded at one hinge. One
+ * mechanism less is one thing less to explain - and the rule of the project is
+ * that the physics stays universal (docs/VISION.md).
  */
-export const POSE = {
-  /**
-   * Stiffness of the pose springs (acceleration per px of deviation). They are
-   * the "muscles" of the frame: they pull a limb back to the place it has in
-   * the rest pose, which is what rescues it after a hard hit - a distance link
-   * alone cannot, because the mirror attitude (the limb turned inside out) has
-   * exactly the same lengths and no spring sees anything wrong.
-   */
-  frequency: 0,
-  /** No pull at all while a circle is within this many px of its place. */
-  deadzone: 3,
-  /**
-   * The muscles only work while the character is moving: below `idleSpeed`
-   * (px/s) the pull fades out completely, so a body lying on the floor stays
-   * there instead of trying to get up and thrashing about. It comes back the
-   * moment anything moves.
-   */
-  idleSpeed: 12,
-  activeSpeed: 45,
-  /**
-   * A circle resting against a wall is pulled along it, never into it: pulling
-   * into the wall would be answered by the wall every substep, and that
-   * reaction shakes the whole frame.
-   */
-  wallGap: 1.5,
-  /** Which sections the springs act on (the body is held by its links). */
-  parts: ['head', 'armL', 'armR', 'legL', 'legR'],
-}
 
 /**
  * The shape limits, in radians. They are turned into DISTANCE limits for the
@@ -225,6 +221,13 @@ export const LIMITS = {
    * spinning all the way round - it can nod and shake a little, like a neck
    * with muscles in it.
    */
+  /**
+   * How far a HINGE may fold, in radians. A hinge is the one place a chain of
+   * circles bends: where two of its bones meet - the elbow, the knee. Which
+   * circle that is, is per-chain DATA (see CHAINS in ragdoll.ts); the mechanism
+   * that builds and folds it is the same for every chain, arms and legs alike.
+   */
+  hinge: { head: 0, torso: 0.25, arm: 1.2, leg: 1.7, attach: 0 },
   neckFold: 0.94,
   neckGrow: 1.01,
 }

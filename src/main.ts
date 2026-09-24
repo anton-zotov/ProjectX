@@ -57,6 +57,8 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const oThrust = document.querySelector<HTMLOutputElement>('#o-thrust')!
   const elastic = document.querySelector<HTMLInputElement>('#s-elastic')!
   const oElastic = document.querySelector<HTMLOutputElement>('#o-elastic')!
+  const grip = document.querySelector<HTMLInputElement>('#s-grip')!
+  const oGrip = document.querySelector<HTMLOutputElement>('#o-grip')!
   const gravity = document.querySelector<HTMLInputElement>('#s-gravity')!
   const oGravity = document.querySelector<HTMLOutputElement>('#o-gravity')!
   const auto = document.querySelector<HTMLInputElement>('#s-auto')!
@@ -69,6 +71,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const cell = document.querySelector<HTMLInputElement>('#s-cell')!
   const oCell = document.querySelector<HTMLOutputElement>('#o-cell')!
   const grid = document.querySelector<HTMLInputElement>('#s-grid')!
+  const tuning = document.querySelector<HTMLInputElement>('#s-tuning')!
   const skeleton = document.querySelector<HTMLInputElement>('#s-skeleton')!
   const quality = document.querySelector<HTMLInputElement>('#s-quality')!
   const profiler = document.querySelector<HTMLInputElement>('#s-profiler')!
@@ -76,6 +79,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const syncOutputs = (): void => {
     oThrust.textContent = String(s.thrust)
     oGravity.textContent = String(s.gravity)
+    oGrip.textContent = `${Math.round(s.jointGrip * 100)} %`
     oElastic.textContent = `${Math.round(s.elasticity * 100)} %`
     oColor.textContent = s.colorSpeed.toFixed(1)
     const h = Math.round(s.fieldScreens * (2 / 3) * 10) / 10
@@ -97,6 +101,11 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   // how rubbery the whole frame is: it applies at once, mid-flight
   elastic.addEventListener('input', () => {
     s.elasticity = Number(elastic.value)
+    syncOutputs()
+  })
+  // how hard the joints hold their angle (0 = floppy springs, 1 = a statue)
+  grip.addEventListener('input', () => {
+    s.jointGrip = Number(grip.value)
     syncOutputs()
   })
   gravity.addEventListener('input', () => {
@@ -127,6 +136,10 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
     s.showGrid = grid.checked
   })
   // tuning view: paint the circles of the skeleton over the drawn body
+  // dev view: draw what the sliders change over the character
+  tuning.addEventListener('change', () => {
+    s.showTuning = tuning.checked
+  })
   skeleton.addEventListener('change', () => {
     s.showSkeleton = skeleton.checked
   })

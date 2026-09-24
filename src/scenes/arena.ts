@@ -29,6 +29,8 @@ export interface GameSettings {
   bodyScale: number // size of the character (skeleton scale)
   showSkeleton: boolean // paint the circles over the body (tuning view)
   elasticity: number // how rubbery the frame is (1 = the tuned default)
+  jointGrip: number // 0..1: how hard the joints hold their angle
+  showTuning: boolean // paint what the sliders change over the character
 }
 
 export const defaultSettings = (): GameSettings => ({
@@ -43,6 +45,8 @@ export const defaultSettings = (): GameSettings => ({
   bodyScale: BODY.scale,
   showSkeleton: true,
   elasticity: 1,
+  jointGrip: 0.25, // 0 = springs only (floppy); 1 = joints hold, the frame stands
+  showTuning: true, // the sliders are drawn on the figure while we tune
 })
 
 /* ------------------------------------------------------------------ *
@@ -85,7 +89,14 @@ const RAIL_MIN_DIST = 28 // world px from the camera below which rails degenerat
 const BODY_COLOR = BODY.color
 /** Colour of the circles when the skeleton is shown (testing view). */
 const SKELETON_COLOR = '#9aa4ad'
-
+/** Tuning view: the room a link has to stretch (elasticity). */
+const ELASTIC_COLOR = '#5ec8ff'
+/** Tuning view: a joint that is holding its angle. */
+const GRIP_COLOR = '#ffb347'
+/** Tuning view: a joint that is slipping right now. */
+const SLIP_COLOR = '#ff5f56'
+/** Tuning view: a welded bone (the rigid piece every chain is built from). */
+const BONE_COLOR = '#c8ff6b'
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
 const hsla = (h: number, s: number, l: number, a: number) =>
@@ -133,6 +144,8 @@ export class ArenaScene implements Scene {
   private builtScale = 0
   /** Elasticity the current ragdoll was last told about. */
   private builtElasticity = 0
+  /** Joint grip last handed to the ragdoll. */
+  private builtGrip = -1
 
   constructor(settings: GameSettings) {
     this.settings = settings
@@ -158,6 +171,8 @@ export class ArenaScene implements Scene {
     this.builtElasticity = this.settings.elasticity
     const body = new Ragdoll(this.worldW / 2, this.worldH / 2, this.settings.bodyScale)
     body.setElasticity(this.settings.elasticity)
+    body.setJointGrip(this.settings.jointGrip)
+    this.builtGrip = this.settings.jointGrip
     return body
   }
 
@@ -196,6 +211,11 @@ export class ArenaScene implements Scene {
     if (this.builtElasticity !== this.settings.elasticity) {
       this.builtElasticity = this.settings.elasticity
       this.ragdoll.setElasticity(this.settings.elasticity)
+    }
+    // the grip is live as well: drag it and watch the frame stop sagging
+    if (this.builtGrip !== this.settings.jointGrip) {
+      this.builtGrip = this.settings.jointGrip
+      this.ragdoll.setJointGrip(this.settings.jointGrip)
     }
     this.colorTime += dt * this.settings.colorSpeed
 
@@ -336,12 +356,93 @@ export class ArenaScene implements Scene {
       ctx.fill()
     }
 
+    // 3. what the admin sliders are doing, drawn over the character
+    if (this.settings.showTuning) this.renderTuning(ctx)
+
     ctx.restore()
   }
 
-  /* ------------------------------------------------------------------ *
-   *  The gridded 3D volume (additive glow)
-   * ------------------------------------------------------------------ */
+  /**
+   * The tuning view: draws what the sliders change, right on the figure.
+   *
+   *   elasticity  a halo around every link, as wide as the stretch it allows
+   *   joint grip  a bone over every joint, thicker the harder it grips, and
+   *               red while that joint is slipping
+   *   (bones and the hinge circle are drawn too: they are what the elasticity
+   *   of a limb is applied to, so the sliders read on every part of the body)
+   */
+  private renderTuning(ctx: CanvasRenderingContext2D): void {
+    const r = this.ragdoll
+    const grip = this.settings.jointGrip
+    const gripPx = r.jointGripPx
+
+    // bones first, under everything: they are the welded structure every chain
+    // is built from, and they are not links - so without drawing them here the
+    // legs (whose links are welded, not elastic) read as emptier and weaker
+    // than the arms, although both are built by the same mechanism.
+    const spans = r.boneSpans()
+    const shared = new Map()
+    for (const span of spans) {
+      for (const i of span) shared.set(i, (shared.get(i) ?? 0) + 1)
+    }
+    for (const span of spans) {
+      if (span.length < 2) continue
+      const first = r.points[span[0]]
+      const last = r.points[span[span.length - 1]]
+      ctx.strokeStyle = BONE_COLOR
+      ctx.globalAlpha = 0.55
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.moveTo(first.x, first.y)
+      ctx.lineTo(last.x, last.y)
+      ctx.stroke()
+    }
+    // the hinge: the circle two bones share - the elbow, the knee
+    for (const [i, count] of shared) {
+      if (count < 2) continue
+      ctx.globalAlpha = 0.9
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(r.points[i].x, r.points[i].y, 2.6, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+
+    // elasticity: the room a link has to stretch (a halo around the body)
+    for (const link of r.drawn) {
+      const room = link.max / link.rest - 1
+      if (room <= 0.005) continue
+      const p1 = r.points[link.a]
+      const p2 = r.points[link.b]
+      ctx.strokeStyle = ELASTIC_COLOR
+      ctx.globalAlpha = Math.min(0.5, room * 8)
+      ctx.lineWidth = link.width + 1.5 + room * 26
+      ctx.beginPath()
+      ctx.moveTo(p1.x, p1.y)
+      ctx.lineTo(p2.x, p2.y)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+
+    // joint grip: a bone over every joint, fatter the harder it holds
+    if (grip > 0) {
+      for (const link of r.links) {
+        if (!link.joint) continue
+        const p1 = r.points[link.a]
+        const p2 = r.points[link.b]
+        const span = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+        const slipping = Math.abs(span - link.rest) > gripPx + 0.05
+        ctx.strokeStyle = slipping ? SLIP_COLOR : GRIP_COLOR
+        ctx.globalAlpha = slipping ? 1 : 0.3 + 0.45 * grip
+        ctx.lineWidth = 1 + 5 * grip
+        ctx.beginPath()
+        ctx.moveTo(p1.x, p1.y)
+        ctx.lineTo(p2.x, p2.y)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+    }
+  }
   private renderSpace(ctx: CanvasRenderingContext2D): void {
     const lx = this.camX
     const ly = this.camY
