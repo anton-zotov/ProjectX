@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p .",
-    "test": "node --no-warnings --test --test-isolation=none tests/ragdoll.test.mjs tests/arena.test.mjs tests/input.test.mjs tests/app.test.mjs tests/admin-panel.test.mjs",
+    "test": "node --no-warnings --test --test-isolation=none tests/guarantees.test.mjs tests/input.test.mjs",
     "serve": "node devtools/serve.mjs dist 5173",
     "preflight": "npm run typecheck && npm test && npm run build"
   },
