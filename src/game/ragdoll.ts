@@ -293,9 +293,6 @@ export const DEBUG: { angle: string; log: (message: string) => void } = {
   log: () => {},
 }
 
-/** The sections of the body, in layout order. */
-export const SECTION_NAMES: readonly PartId[] = CHAINS.map((chain) => chain.part)
-
 /** How many circles each section has (the original's proportions). */
 export const SECTION_SIZES: Readonly<Record<string, number>> = Object.fromEntries(
   CHAINS.map((chain) => [chain.part, chain.at.length] as const),

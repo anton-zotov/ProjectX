@@ -70,6 +70,21 @@ export interface SkeletonScheme {
 }
 
 /* ------------------------------------------------------------------ *
+ *  HOW A LIMB'S JOINT IS WRITTEN DOWN
+ *
+ *  There are two styles, and a chain uses ONE of them:
+ *
+ *    props  - `swing` + `attachAlong`: two links to the body hold the limb's
+ *             attitude (the original scheme; a limb cannot turn inside out);
+ *    window - `window` alone: one link to the tip of the limb plus a hard
+ *             one-sided window (a limb may swing that far either way and never
+ *             crosses to the other side).
+ *
+ *  Everything else is shared: `count`, `radius`, `step`, `angle`, `hinge`,
+ *  `preBend`, `attachTo`, `attachAngle`, `attachLength`, `flex`.
+ * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
  *  1. "normal" - what the game runs today.
  * ------------------------------------------------------------------ */
 
@@ -79,7 +94,9 @@ export const NORMAL: SkeletonScheme = {
   body: { count: 5, headRadius: 1.8, neckGap: 1 },
   chains: [
     { part: 'head', count: 1, radius: 1.8 },
-    { part: 'torso', count: 5, attachTo: 'head' },
+    // flex: false - the body is welded into one rigid bone. (The `vertebrae`
+    // scheme below turns it on: a spine that gives and bends instead.)
+    { part: 'torso', count: 5, attachTo: 'head', flex: false },
     {
       part: 'armL',
       count: 4,

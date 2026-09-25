@@ -215,7 +215,7 @@ button.wide:hover {
 .ed-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 260px 1fr 320px;
+  grid-template-columns: 240px minmax(0, 1fr) minmax(0, 300px);
   gap: 0;
   min-height: 0;
 }
@@ -229,6 +229,7 @@ button.wide:hover {
 .ed-list,
 .ed-props {
   overflow-y: auto;
+  overflow-x: hidden; /* nothing in the inspector is wider than the panel */
   padding: 10px;
   border-right: 1px solid #1d2620;
 }
@@ -236,6 +237,52 @@ button.wide:hover {
 .ed-props {
   border-right: none;
   border-left: 1px solid #1d2620;
+}
+
+.ed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border: 1px solid #1d2620;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ed-row b {
+  color: #9fe8c6;
+  font-weight: 400;
+}
+
+.ed-row span {
+  opacity: 0.65;
+  font-size: 11px;
+}
+
+.ed-group {
+  margin: 14px 0 6px;
+  padding-bottom: 3px;
+  color: #7fa892;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1d2620;
+}
+
+.ed-hint.tight {
+  margin: -2px 0 6px;
+  font-size: 11px;
+}
+
+.ed-tip {
+  opacity: 0.45;
+  font-size: 11px;
+}
+
+.ed-zoom {
+  display: flex;
+  gap: 4px;
 }
 
 .ed-title {
@@ -298,7 +345,7 @@ button.wide:hover {
 
 .ed-field {
   display: grid;
-  grid-template-columns: 1fr 96px;
+  grid-template-columns: minmax(0, 1fr) 92px;
   align-items: center;
   gap: 8px;
   margin: 6px 0;
@@ -309,7 +356,9 @@ button.wide:hover {
 }
 
 .ed-field input {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   padding: 3px 6px;
   color: #d8e6dd;
   background: #0b1512;
