@@ -1,4 +1,5 @@
 import { BODY, LIMITS, LINK, SIM, type BodyKind, type LinkKind, type ShapeKind } from './config'
+import { NORMAL, type SkeletonScheme } from './skeletons'
 
 /* ------------------------------------------------------------------ *
  *  Ragdoll ("чувачок")
@@ -95,6 +96,14 @@ interface Chain {
   attachTo?: string
   attachKind?: BodyKind
   /**
+   * The body circle next to the one this limb hangs from (torso1 for the arms
+   * whose shoulder is torso0, the one above the pelvis for the legs).
+   * A second joint is needed there: one joint at the limb's first circle says
+   * how the limb is aligned with the link, but the link itself could still
+   * rotate all the way around the body circle. Two joints pin the attitude.
+   */
+  attachAlong?: string
+  /**
    * The circle where this chain FOLDS - its hinge (the elbow, the knee).
    * Two bones meet there, and it is the only place the chain may bend; how far
    * it may fold is `LIMITS.hinge[kind]`. `undefined` means the chain is a
@@ -106,23 +115,15 @@ interface Chain {
    * that the physics is universal (see docs/VISION.md).
    */
   hinge?: number
-  /**
-   * Half-window of this chain's joint, in radians: how far the limb may swing
-   * either way from its neutral attitude. The window ends where the limb would
-   * cross the body axis to the other side, so the left arm cannot become the
-   * right arm. `undefined` = the chain does not hang on a joint (it is part of
-   * the body itself).
-   */
+  /** How far the limb may swing from its attitude, radians (a props joint). */
+  swing?: number
+  /** A one-sided window of the joint, radians (a single-link joint). */
   window?: number
-  /**
-   * The chain is a spine, not a welded bar: its links give a little, its braces
-   * stop it folding, and it is not made into a rigid bone.
-   */
+  /** A spine: the chain gives and bends a little instead of being welded. */
   flex?: boolean
 }
 
 const R = BODY.radius.body
-const HEAD_R = BODY.radius.head
 
 /**
  * A limb is a line of circles: `count` of them, marching from `start` by
@@ -152,14 +153,9 @@ const limbStart = (
 
 /**
  * A limb that marches straight and then folds a little at its hinge - the pose
- * of a standing man, whose knees are never locked.
- *
- * This is not decoration. A leg of perfectly straight bones is a COLUMN: a
- * load along it does not change the distance across the hinge at all, so there
- * is nothing for the spring to give and nothing to absorb a landing - measured
- * on such a frame, the joints hold their angles perfectly and the whole figure
- * tips over like a plank within a second. With a few degrees of bend at rest
- * the same load folds the knee a little and the frame settles instead.
+ * of a standing man, whose knees are never locked. The bend makes a leg a
+ * spring instead of a column (a column cannot fold under a load along it, so
+ * there is nothing to absorb a landing).
  */
 const bentMarch = (
   start: readonly [number, number],
@@ -172,144 +168,85 @@ const bentMarch = (
 ): ReadonlyArray<readonly [number, number]> => {
   const points: Array<readonly [number, number]> = [start]
   for (let i = 1; i < count; i++) {
-    // `side` mirrors the limb; a bigger angle moves the circle further OUT to
+    // 'side' mirrors the limb; a bigger angle moves the circle further OUT to
     // its own side, so this bends both knees the same way round.
-    const a = angle + (i > hinge ? bend : 0)
+    const alpha = angle + (i > hinge ? bend : 0)
     const prev = points[i - 1]
-    points.push([prev[0] + side * Math.sin(a) * step, prev[1] + Math.cos(a) * step] as const)
+    points.push([prev[0] + side * Math.sin(alpha) * step, prev[1] + Math.cos(alpha) * step] as const)
   }
   return points
 }
 
-/**
- * Where the first vertebra sits: the head is a bigger circle that covers the
- * UPPER HALF of it - the head circle's edge passes through the vertebra's
- * centre, so the two overlap by one radius.
- */
-const TORSO_TOP = HEAD_R
-const TORSO_STEP = R * 2
-/** How many circles the body has (the legs hang from the last one). */
-const TORSO_COUNT = 5
-const TORSO_BOTTOM = TORSO_TOP + TORSO_STEP * (TORSO_COUNT - 1)
-/** The name of the last circle of the body: the pelvis the legs hang from. */
-const PELVIS = `torso${TORSO_COUNT - 1}`
-/** The vertebra both shoulders grow from (the SECOND one). */
-const SHOULDERS = `torso1`
-/** How far a limb's first circle sits from the body circle it hangs on. */
-const ATTACH_REST = R * 2 * (1 + LINK.give.attach)
-/**
- * A LIMB IS TWO BONES AND ONE JOINT.
- *
- * The joint is where the limb hangs on the body - the shoulder on the first
- * circle of the body, the hip on the last one. It is exactly ONE link: a spring
- * that pulls the limb to its NEUTRAL attitude (straight out to the side for an
- * arm, down and slightly out for a leg) with a hard WINDOW either side of it.
- * Inside the window the limb swings freely; the window ends where the limb
- * would cross the body to the other side, so a left arm can never become a
- * right arm. No extra braces, no extra bones: one link per joint, and it is
- * both the muscle (it pulls to the neutral) and the stop (the window).
- *
- * The attach angle and the bone angle are deliberately different numbers: the
- * attach vector is what gives the window its shape (the link measures the
- * distance body-circle -> limb tip, and with a collinear build that distance
- * could not tell "up" from "down").
- */
-const ARM_ATTACH_ANGLE = (45 * Math.PI) / 180
-/** Neutral attitude of an arm: straight out to the side, 90 degrees. */
-const ARM_ANGLE = (90 * Math.PI) / 180
-const ARM_STEP = R * 2
-/** An arm may swing a half-turn either way - up over the head or down. */
-const ARM_WINDOW = (90 * Math.PI) / 180
-/**
- * Legs: the hip link goes out and down at 45 degrees, and the leg itself hangs
- * "south-south-east" / "south-south-west" (20 degrees off the vertical).
- */
-const LEG_ATTACH_ANGLE = (45 * Math.PI) / 180
-const LEG_ATTACH_LENGTH = ATTACH_REST
-const LEG_ANGLE = (20 * Math.PI) / 180
-const LEG_STEP = R * 2
-/** A leg swings less: a narrower window keeps the two legs apart. */
-const LEG_WINDOW = (20 * Math.PI) / 180
-/** How much the knee is bent in the rest pose: a standing man, not a plank. */
-const LEG_BEND = (10 * Math.PI) / 180
+/** Where the first vertebra sits: below the head, by the head's own size. */
+const firstVertebraOf = (scheme: SkeletonScheme): number =>
+  (R * scheme.body.headRadius + R) * scheme.body.neckGap
 
-const armChain = (side: number, part: PartId): Chain => ({
-  part,
-  prefix: part,
-  radius: R,
-  // FOUR circles per arm. The shoulder joint sits in the SECOND vertebra, and
-  // the elbow is on the second circle of the arm (bone one: circles 0-1, bone
-  // two: circles 1-2-3).
-  at: march(
-    limbStart(TORSO_TOP + TORSO_STEP, ARM_ATTACH_ANGLE, side, ATTACH_REST),
-    [side * Math.sin(ARM_ANGLE) * ARM_STEP, Math.cos(ARM_ANGLE) * ARM_STEP],
-    4,
-  ),
-  hinge: 1,
-  window: ARM_WINDOW,
-  attachTo: SHOULDERS,
-  attachKind: 'attach',
-})
-
-const legChain = (side: number, part: PartId): Chain => ({
-  part,
-  prefix: part,
-  radius: R,
-  // SIX circles per leg. The hip joint sits in the LAST vertebra (the pelvis),
-  // and the knee is on the third circle of the leg (bone one: circles 0-1-2,
-  // bone two: circles 2-3-4-5).
-  at: bentMarch(
-    limbStart(TORSO_BOTTOM, LEG_ATTACH_ANGLE, side, LEG_ATTACH_LENGTH),
-    LEG_ANGLE,
-    LEG_BEND,
-    side,
-    LEG_STEP,
-    6,
-    2,
-  ),
-  hinge: 2,
-  window: LEG_WINDOW,
-  attachTo: PELVIS,
-  attachKind: 'attach',
-})
+const deg = (d: number): number => (d * Math.PI) / 180
 
 /**
- * The skeleton:
- * one head circle, a five-circle body with VERTEBRAE (it bends a little, it is
- * not one welded bar), and two limbs of three circles each - two bones and one
- * joint, four bones per pair of limbs.
- *
- *   torso0 is the neck AND the shoulders: both arms hang from the FIRST
- *   circle of the body, with the head sitting on top of it
- *   the arms point straight out to the sides (their neutral attitude)
- *   the legs point down, slightly spread, and hang from the last body circle
- *
- * The numbers are layout px. Neighbouring circles never overlap, and the
- * drawing fills the gap between them with a capsule.
+ * TURN A SCHEME INTO CHAINS - the one place where the character's composition
+ * is read. Everything after this (links, bones, joints, the solver) works on
+ * the result and does not care where it came from, so a new body is DATA, not
+ * a change inside the engine.
  */
-const CHAINS: readonly Chain[] = [
-  {
-    part: 'head',
-    prefix: 'head',
-    radius: HEAD_R,
-    at: [[0, 0]],
-  },
-  {
-    part: 'torso',
-    prefix: 'torso',
-    radius: R,
-    at: march([0, TORSO_TOP], [0, TORSO_STEP], TORSO_COUNT),
-    attachTo: 'head',
-    attachKind: 'head',
-    // The body is a spine, not a bar: its links give a little and its braces
-    // stop it folding, so it bends like a back instead of being welded solid.
-    flex: true,
-  },
-  armChain(-1, 'armL'),
-  armChain(1, 'armR'),
-  legChain(-1, 'legL'),
-  legChain(1, 'legR'),
-]
+export const buildChains = (scheme: SkeletonScheme): Chain[] => {
+  const step = R * 2
+  const attachRest = step * (1 + LINK.give.attach)
+  const first = firstVertebraOf(scheme)
+  /** Y of a body circle, by name ('head' sits at the origin). */
+  const circleY = (name: string): number => {
+    if (name === 'head') return 0
+    const m = /^torso(\d+)$/.exec(name)
+    return m ? first + Number(m[1]) * step : 0
+  }
+  /** The keywords a scheme may use instead of exact circle names. */
+  const resolve = (name: string): string =>
+    name === 'neck' ? 'torso0' : name === 'pelvis' ? `torso${scheme.body.count - 1}` : name
+
+  return scheme.chains.map((c) => {
+    const side = c.part.endsWith('L') ? -1 : c.part.endsWith('R') ? 1 : 0
+    const radius = R * (c.radius ?? 1)
+    const at: ReadonlyArray<readonly [number, number]> =
+      c.part === 'head'
+        ? [[0, 0]]
+        : c.part === 'torso'
+          ? // The body hangs straight off the head: its first circle sits
+            // `neckGap` below the head's centre, and the rest march down.
+            march([0, first], [0, step], c.count)
+          : c.attachTo === undefined
+            ? march([0, first], [0, step], c.count)
+            : bentMarch(
+              limbStart(
+                circleY(resolve(c.attachTo)),
+                deg(c.attachAngle ?? 0),
+                side,
+                attachRest * (c.attachLength ?? 1),
+              ),
+              deg(c.angle ?? 0),
+              deg(c.preBend ?? 0),
+              side,
+              step * (c.step ?? 1),
+              c.count,
+              c.hinge ?? -1,
+            )
+    return {
+      part: c.part as PartId,
+      prefix: c.part,
+      radius,
+      at,
+      hinge: c.hinge,
+      swing: c.swing,
+      window: c.window,
+      flex: c.flex,
+      attachTo: c.attachTo ? resolve(c.attachTo) : undefined,
+      attachKind: c.part === 'torso' ? 'head' : c.attachTo ? 'attach' : undefined,
+      attachAlong: c.attachAlong ? resolve(c.attachAlong) : undefined,
+    }
+  })
+}
+
+/** The chains of the default scheme, for the module-level helpers below. */
+const CHAINS: readonly Chain[] = buildChains(NORMAL)
 
 /**
  * Where the player's thrust is applied. Not the head itself but the circle of
@@ -383,12 +320,11 @@ export class Ragdoll {
    */
   private readonly hits = new Map<number, { vx: number; vy: number; x: boolean; y: boolean }>()
   /**
-   * The circles of the frame are NOT kept apart: any part of the body may pass
-   * through any other. A ragdoll that resists itself - a leg shoving the other
-   * leg, a thigh catching on the pelvis - jams in poses it cannot leave, which
-   * is what a "hip dislocation" in a split looked like. What holds the shape is
-   * the skeleton (links, bones, hinges) and nothing else.
+   * Pairs of circles that are not linked to each other and are close enough to
+   * matter: they are pushed apart so that no two circles of the body ever
+   * intersect (the two legs, a limb and the body, the head and the body).
    */
+  private readonly contacts: Array<[number, number, boolean]> = []
   /** Rigid bones: circles straightened around their hinge every iteration. */
   private readonly bones: Bone[] = []
   /**
@@ -406,8 +342,17 @@ export class Ragdoll {
   private grip = 0
   /** Rest pose of every circle, in the body's own frame (origin = torso0). */
 
-  constructor(x: number, y: number, scale: number = BODY.scale) {
-    for (const chain of CHAINS) {
+  /** The scheme this frame was built from. */
+  readonly scheme: SkeletonScheme
+
+  /**
+   * @param scheme the skeleton to build. The frame is DATA: this class knows
+   * how to turn a scheme into circles, links and bones, and nothing else about
+   * the body's composition - so a new character is a new scheme.
+   */
+  constructor(x: number, y: number, scale: number = BODY.scale, scheme: SkeletonScheme = NORMAL) {
+    this.scheme = scheme
+    for (const chain of buildChains(scheme)) {
       const from = this.points.length
       // mass comes from the layout radius, so changing BODY.scale (a look
       // setting) does not silently turn the character into a different body
@@ -446,14 +391,14 @@ export class Ragdoll {
       //      straddles the hinge may fold - by `LIMITS.hinge` - so a limb folds
       //      at the joint and nowhere else.
       //
-      //  A `flex` chain (the body) is the exception that proves the rule: it is
-      //  a SPINE. Its links are elastic, its braces only stop it folding, and
-      //  it is not turned into a rigid bone - so it bends like a back.
+      //  Measured, when only the legs were built this way: the arms rippled up
+      //  to 31 degrees and the legs 0, and the arm slider did nothing to a leg.
       // ------------------------------------------------------------------
       const limb = linkKindOf(chain.part)
       const hinge = chain.hinge ?? -1
-      const flex = chain.flex === true
       const circles = chain.at.map((_, i) => i)
+      /** A spine: it bends a little instead of being welded into one bone. */
+      const flex = chain.flex === true
       const bones =
         hinge < 0
           ? [circles]
@@ -471,7 +416,8 @@ export class Ragdoll {
       const fold = Math.cos(LIMITS.bend[limb] / 2)
       const hingeFold = Math.cos((LIMITS.hinge[limb] ?? LIMITS.bend[limb]) / 2)
 
-      // chain links: neighbours, never overlapping. Welded inside a bone.
+      // chain links: neighbours, never overlapping. Welded inside a bone - but a
+      // spine keeps them elastic, which is what lets it bend at all.
       for (let i = 1; i < chain.at.length; i++) {
         this.addLink(from + i - 1, from + i, limb, true, false, inOneBone(i - 1, i))
       }
@@ -482,41 +428,35 @@ export class Ragdoll {
       // cos(bend/2).
       for (let i = 2; i < chain.at.length; i++) {
         if (hinge >= 0 && !inOneBone(i - 2, i)) {
-          // The brace across the hinge IS the elbow/knee: it folds to its limit
-          // and it is the one elastic thing in a limb (kind 'hinge' has its own,
-          // softer compliance), so a joint gives and springs back instead of
-          // being a hard stop.
-          this.addBrace(from + i - 2, from + i, hingeFold, 'hinge')
-        } else if (!flex) {
+          // the brace across the hinge: the fold of the limb
+          this.addBrace(from + i - 2, from + i, hingeFold, 'brace')
+        } else if (hinge >= 0) {
           this.addBrace(from + i - 2, from + i, 1, 'brace', 1, true)
         } else {
+          // a spine: springs that stop it folding, not welds
           this.addBrace(from + i - 2, from + i, fold, 'brace')
         }
       }
-      // A spine (or any chain without a hinge) would bow out sideways without a
-      // brace from end to end. A chain with a hinge must NOT have one: it would
-      // lock the fold.
+      // A single-bone chain (the body) would bow out sideways without a brace
+      // from end to end. A chain with a hinge must NOT have one: it would lock
+      // the fold.
       if (hinge < 0 && chain.at.length >= 4) {
         this.addBrace(from, from + chain.at.length - 1, fold, 'brace')
       }
 
-      // How the first circle of this chain hangs on the rest of the body: ONE
-      // link onto the body circle it grows from - and, for a limb, ONE more:
-      // the joint itself.
+      // how the first circle of this chain hangs on the rest of the body.
       if (chain.attachTo) {
         const parent = this.indexOf(chain.attachTo)
         this.addLink(parent, from, chain.attachKind ?? 'attach', true, true)
         const parentPart = linkKindOf(this.points[parent].part)
-        /**
-         * THE JOINT: a spring towards the neutral attitude with a hard window
-         * either side. The link measures the distance from the body circle to
-         * the limb's TIP: at the neutral attitude that distance is `tipRest`,
-         * and swinging the limb by `window` makes it `tipMax`. Allowing exactly
-         * that much - and no more - means the limb swings freely inside its own
-         * sector, is pulled back to the neutral when nothing holds it, and can
-         * never cross the body axis to become the other limb.
-         */
         if (chain.window !== undefined && chain.at.length > 1) {
+          // THE ONE-LINK JOINT (a scheme with a `window`): a spring towards the
+          // neutral attitude with a hard window either side. The link measures
+          // the distance body-circle -> limb tip; at the neutral attitude that
+          // is `rest`, and swinging the limb by the window makes it `tipMax`.
+          // Allowing exactly that much means the limb swings freely inside its
+          // own sector, is pulled back when nothing holds it, and can never
+          // cross the body axis to become the other limb.
           const tip = from + chain.at.length - 1
           const p = this.points[parent]
           const joint = this.points[from]
@@ -533,6 +473,24 @@ export class Ragdoll {
             tipMax = Math.max(tipMax, Math.hypot(rx - p.x, ry - p.y))
           }
           this.addBrace(parent, tip, 0, 'pose', tipMax / rest)
+        } else {
+          // THE PROPS JOINT (the original scheme): springs that give the limb
+          // its attitude. Two links to the SAME body circle fix how far along
+          // the limb they reach, and a third one from the neighbouring body
+          // circle fixes which way it points. One alone would let the limb
+          // swing right around its joint and turn inside out.
+          const swing = chain.swing ?? Math.max(LIMITS.swing[parentPart], LIMITS.swing[limb])
+          if (swing > 0 && chain.at.length > 1) {
+            this.addBrace(parent, from + 1, Math.cos(swing / 2), 'pose')
+            if (chain.attachAlong) {
+              // The third link is what makes the attitude unique. Two links have
+              // a mirror solution (the limb turned inside out) in which every
+              // length is the same again - the springs would see nothing wrong
+              // and leave it there. This one cannot be short enough in that
+              // solution, so the limb cannot get there at all.
+              this.addBrace(this.indexOf(chain.attachAlong), from, 0.45, 'pose', 1.5)
+            }
+          }
         }
         // The head is not a limb: it must not be able to spin all the way
         // round on the neck. A second, tight link to the NEXT circle of the
@@ -541,6 +499,29 @@ export class Ragdoll {
         if (parentPart === 'head' && chain.at.length > 1) {
           this.addBrace(from + 1, parent, LIMITS.neckFold, 'brace', LIMITS.neckGrow)
         }
+      }
+    }
+
+    // Which pairs of circles have to be kept apart. Linked circles are handled
+    // by their link (which already stops them overlapping); everything else
+    // that starts out close enough to ever meet goes into the list - except the
+    // two limbs of a pair: the left and the right hip hang on the same body
+    // circle and must not shove each other around.
+    const linked = new Set(this.links.map((l) => (l.a < l.b ? `${l.a}-${l.b}` : `${l.b}-${l.a}`)))
+    const twins = (a: PartId, b: PartId): boolean =>
+      (a === 'legL' && b === 'legR') ||
+      (a === 'legR' && b === 'legL') ||
+      (a === 'armL' && b === 'armR') ||
+      (a === 'armR' && b === 'armL')
+    for (let i = 0; i < this.points.length; i++) {
+      for (let j = i + 1; j < this.points.length; j++) {
+        if (linked.has(`${i}-${j}`)) continue
+        const p1 = this.points[i]
+        const p2 = this.points[j]
+        const soft = twins(p1.part, p2.part)
+        const touching = p1.r + p2.r
+        const apart = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+        if (apart < touching * SIM.contactReach) this.contacts.push([i, j, soft])
       }
     }
 
@@ -833,11 +814,13 @@ export class Ragdoll {
     for (const link of this.links) link.lambda = 0
     this.hits.clear()
     for (let i = 0; i < SIM.solverIterations; i++) {
-      // Order matters: the walls first, then the LINKS - a bone must come out
-      // of a substep straight, otherwise the wall clamps leave it bent
-      // (measured: the thigh bent by 22-30 degrees even though every link
-      // inside it was rigid).
+      // Order matters, and it is decided by what is most visible:
+      // walls first, then the contacts, and the LINKS last - a bone must come
+      // out of a substep straight, otherwise the contacts and the wall clamps
+      // leave it bent (measured: the thigh bent by 22-30 degrees even though
+      // every link inside it is rigid).
       this.clampToWalls(bounds)
+      this.separate()
       for (const link of this.links) this.satisfy(link, dt)
     }
 
@@ -846,9 +829,7 @@ export class Ragdoll {
 
     // 4. Damp the shape springs: a spring alone would swing for ever
     for (const link of this.links) {
-      if (link.kind === 'brace' || link.kind === 'pose' || link.kind === 'hinge') {
-        this.damp(link, LINK.damping[link.kind])
-      }
+      if (link.kind === 'brace' || link.kind === 'pose') this.damp(link, LINK.damping[link.kind])
     }
 
     // 5. One velocity response for the circles that touched a wall
@@ -877,6 +858,55 @@ export class Ragdoll {
     p2.py += relY * k * w2
   }
 
+
+  /**
+   * Push apart the circles that are not linked to each other, so that no two
+   * circles of the body intersect. This is what keeps the two legs two legs:
+   * without it they simply pass through one another in the air (measured: they
+   * overlap completely in 98% of frames) and read as one thick leg.
+   *
+   * The two limbs of a pair (left leg against right leg, left arm against the
+   * right arm) are handled GENTLY. A hard shove there is felt as the hips
+   * knocking each other about; the soft one only stops them sinking in.
+   */
+  private separate(): void {
+    for (const [i, j, soft] of this.contacts) {
+      const p1 = this.points[i]
+      const p2 = this.points[j]
+      let dx = p2.x - p1.x
+      let dy = p2.y - p1.y
+      const d = Math.hypot(dx, dy)
+      const min = p1.r + p2.r
+      if (d >= min || d < 1e-6) continue
+      const w1 = p1.im
+      const w2 = p2.im
+      const w = w1 + w2
+      if (w === 0) continue
+
+      // part of the overlap per iteration: the rest of the loop finishes the
+      // job, and pushing it all at once makes the pair jitter
+      const corr = ((min - d) / d) * (soft ? SIM.twinPush : 0.5)
+      p1.x -= dx * corr * (w1 / w)
+      p1.y -= dy * corr * (w1 / w)
+      p2.x += dx * corr * (w2 / w)
+      p2.y += dy * corr * (w2 / w)
+
+      if (!soft) continue
+      // ...and take the fight out of the pair: damp the velocity ALONG the line
+      // between them (a proper damper - remove a share of the approach), so two
+      // limbs settle instead of bouncing off each other
+      const nx = dx / d
+      const ny = dy / d
+      const relX = p2.x - p2.px - (p1.x - p1.px)
+      const relY = p2.y - p2.py - (p1.y - p1.py)
+      const relN = relX * nx + relY * ny
+      const imp = (0.25 * relN) / w
+      p1.px -= imp * w1 * nx
+      p1.py -= imp * w1 * ny
+      p2.px += imp * w2 * nx
+      p2.py += imp * w2 * ny
+    }
+  }
 
   /**
    * Solve one link: hard limits first (no overlap, no overstretch), then the

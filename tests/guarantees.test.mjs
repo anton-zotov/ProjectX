@@ -21,10 +21,12 @@ import { loadModules, mockCtx, makeInput } from './helpers.mjs'
 const RAGDOLL = '/src/game/ragdoll.ts'
 const CONFIG = '/src/game/config.ts'
 const ARENA = '/src/scenes/arena.ts'
-const { mods, close } = await loadModules([RAGDOLL, CONFIG, ARENA])
+const SKELETONS_MOD = '/src/game/skeletons.ts'
+const { mods, close } = await loadModules([RAGDOLL, CONFIG, ARENA, SKELETONS_MOD])
 const { Ragdoll, POINT_NAMES } = mods[RAGDOLL]
 const { SIM, DEFAULTS } = mods[CONFIG]
 const { ArenaScene, defaultSettings } = mods[ARENA]
+const { SKELETONS } = mods[SKELETONS_MOD]
 test.after(close)
 
 const DT = SIM.dt
@@ -253,10 +255,27 @@ test('GUARANTEE: every control of the admin panel is wired to something', () => 
   assert.ok(ids.length >= 8, `the panel has its controls (${ids.length} found)`)
   for (const id of ids) {
     assert.ok(main.includes(`#${id}`), `${id} is read by the code`)
-    if (!/checkbox/.test(html.slice(html.indexOf(`id="${id}"`), html.indexOf(`id="${id}"`) + 120))) {
-      const out = `#o-${id.slice(2)}`
-      assert.ok(html.includes(`id="${out.slice(1)}"`), `${id} shows its value (${out})`)
-      assert.ok(main.includes(out), `${out} is updated by the code`)
-    }
+    // a checkbox has no number, and a picker shows its choice in itself
+    const tag = html.slice(html.indexOf(`id="${id}"`), html.indexOf(`id="${id}"`) + 160)
+    if (/checkbox/.test(tag) || id === 's-scheme') continue
+    const out = `#o-${id.slice(2)}`
+    assert.ok(html.includes(`id="${out.slice(1)}"`), `${id} shows its value (${out})`)
+    assert.ok(main.includes(out), `${out} is updated by the code`)
+  }
+})
+
+/* ------------------------------------------------------------------ *
+ *  9. A scheme is data: every scheme the game offers must build a frame.
+ * ------------------------------------------------------------------ */
+
+test('GUARANTEE: every skeleton scheme builds a working frame', () => {
+  for (const scheme of SKELETONS) {
+    const r = new Ragdoll(500, 200, 1, scheme)
+    assert.ok(r.points.length >= 6, `${scheme.id}: the frame has circles (${r.points.length})`)
+    assert.ok(r.links.length > 0, `${scheme.id}: the frame has links`)
+    assert.ok(r.boneSpans().length > 0, `${scheme.id}: the limbs are bones`)
+    // it must survive being thrown about like any other body
+    for (let i = 0; i < 60 * 3; i++) run(r, 1, fight)
+    assert.ok(finite(r), `${scheme.id}: the frame stays finite`)
   }
 })

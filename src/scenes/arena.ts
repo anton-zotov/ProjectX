@@ -1,6 +1,7 @@
 import type { GameContext, Scene } from '../scene'
 import { BODY, DEFAULTS, SIM } from '../game/config'
 import { Ragdoll } from '../game/ragdoll'
+import { DEFAULT_SKELETON, skeletonById } from '../game/skeletons'
 
 /* ------------------------------------------------------------------ *
  *  Screen / field geometry
@@ -29,6 +30,8 @@ export interface GameSettings {
   bodyScale: number // size of the character (skeleton scale)
   showSkeleton: boolean // paint the circles over the body (tuning view)
   elasticity: number // how rubbery the frame is (1 = the tuned default)
+  /** Which skeleton scheme the character is built from (see game/skeletons). */
+  skeleton: string
   jointGrip: number // 0..1: how hard the joints hold their angle
   showTuning: boolean // paint what the sliders change over the character
 }
@@ -45,6 +48,7 @@ export const defaultSettings = (): GameSettings => ({
   bodyScale: BODY.scale,
   showSkeleton: true,
   elasticity: 1,
+  skeleton: DEFAULT_SKELETON,
   jointGrip: 0.25, // 0 = springs only (floppy); 1 = joints hold, the frame stands
   showTuning: true, // the sliders are drawn on the figure while we tune
 })
@@ -142,6 +146,8 @@ export class ArenaScene implements Scene {
   private readonly drawnH: number[] = []
   /** Body scale the current ragdoll was built with (see buildBody). */
   private builtScale = 0
+  /** The scheme the current frame was built from. */
+  private builtSkeleton = ''
   /** Elasticity the current ragdoll was last told about. */
   private builtElasticity = 0
   /** Joint grip last handed to the ragdoll. */
@@ -168,8 +174,14 @@ export class ArenaScene implements Scene {
   /** A fresh body in the middle of the field, with the current body scale. */
   private buildBody(): Ragdoll {
     this.builtScale = this.settings.bodyScale
+    this.builtSkeleton = this.settings.skeleton
     this.builtElasticity = this.settings.elasticity
-    const body = new Ragdoll(this.worldW / 2, this.worldH / 2, this.settings.bodyScale)
+    const body = new Ragdoll(
+      this.worldW / 2,
+      this.worldH / 2,
+      this.settings.bodyScale,
+      skeletonById(this.settings.skeleton),
+    )
     body.setElasticity(this.settings.elasticity)
     body.setJointGrip(this.settings.jointGrip)
     this.builtGrip = this.settings.jointGrip
@@ -207,6 +219,8 @@ export class ArenaScene implements Scene {
     this.syncSettings()
     // the body scale is geometry, not a live parameter: rebuild the ragdoll
     if (this.builtScale !== this.settings.bodyScale) this.respawn()
+    // a different scheme is a different body: rebuild it
+    if (this.builtSkeleton !== this.settings.skeleton) this.respawn()
     // the elasticity is live: dragging the slider is felt at once
     if (this.builtElasticity !== this.settings.elasticity) {
       this.builtElasticity = this.settings.elasticity
