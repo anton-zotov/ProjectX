@@ -331,6 +331,8 @@ button.wide:hover {
 .ed-view canvas {
   border: 1px solid #1d2620;
   border-radius: 10px;
+  max-width: 100%;
+  height: auto;
 }
 
 .ed-viewbar {

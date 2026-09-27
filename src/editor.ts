@@ -100,6 +100,8 @@ export class SkeletonEditor {
   private paused = false
   private gravity = true
   private zoom = 2.4
+  /** Where the view looks, in world units. Zoom keeps the cursor's point. */
+  private cam = { x: WORLD.w / 2, y: WORLD.h / 2 }
   private acc = 0
   private last = 0
   private running = false
@@ -120,13 +122,13 @@ export class SkeletonEditor {
         <button data-act="load" type="button">загрузить</button>
         <button data-act="export" type="button">экспорт JSON</button>
         <button data-act="import" type="button">импорт JSON</button>
-        <button data-act="apply" type="button" class="primary">применить в игре</button>
+        <button data-act="apply" type="button">применить в игре</button>
         <button data-act="close" type="button">закрыть</button>
       </div>
       <div class="ed-body">
         <div class="ed-list"></div>
         <div class="ed-view">
-          <canvas width="720" height="560"></canvas>
+          <canvas width="1040" height="820"></canvas>
           <div class="ed-viewbar">
             <button data-act="pause" type="button">пауза</button>
             <button data-act="gravity" type="button">гравитация: вкл</button>
@@ -160,7 +162,11 @@ export class SkeletonEditor {
     })
     canvas.addEventListener('wheel', (event) => {
       event.preventDefault()
-      this.zoomBy(Math.exp(-event.deltaY * 0.0012))
+      const rect = canvas.getBoundingClientRect()
+      this.zoomBy(Math.exp(-event.deltaY * 0.0012), {
+        x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+        y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+      })
     })
     canvas.addEventListener('click', (event) => this.pick(event))
     const file = this.overlay.querySelector('.ed-file') as HTMLInputElement
@@ -215,23 +221,35 @@ export class SkeletonEditor {
     requestAnimationFrame(this.tick)
   }
 
-  private zoomBy(factor: number): void {
+  /**
+   * Zoom, keeping the world point under `at` (a screen position) exactly where
+   * it is. Without this the view jumps to the centre of the scene on every
+   * wheel tick, which makes it useless for looking at a limb.
+   */
+  private zoomBy(factor: number, at?: { x: number; y: number }): void {
+    if (!at) {
+      this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * factor))
+      return
+    }
+    const before = this.unview(at.x, at.y)
     this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * factor))
+    this.cam.x = before.x - (at.x - this.canvas.width / 2) / this.zoom
+    this.cam.y = before.y - (at.y - this.canvas.height / 2) / this.zoom
   }
 
   /** World -> screen. The camera is fixed: the world's centre stays centred. */
   private view(p: { x: number; y: number }): { x: number; y: number } {
     return {
-      x: this.canvas.width / 2 + (p.x - WORLD.w / 2) * this.zoom,
-      y: this.canvas.height / 2 + (p.y - WORLD.h / 2) * this.zoom,
+      x: this.canvas.width / 2 + (p.x - this.cam.x) * this.zoom,
+      y: this.canvas.height / 2 + (p.y - this.cam.y) * this.zoom,
     }
   }
 
   /** Screen -> world (for picking with the mouse). */
   private unview(x: number, y: number): { x: number; y: number } {
     return {
-      x: WORLD.w / 2 + (x - this.canvas.width / 2) / this.zoom,
-      y: WORLD.h / 2 + (y - this.canvas.height / 2) / this.zoom,
+      x: this.cam.x + (x - this.canvas.width / 2) / this.zoom,
+      y: this.cam.y + (y - this.canvas.height / 2) / this.zoom,
     }
   }
 
@@ -479,6 +497,13 @@ export class SkeletonEditor {
           maxY = Math.max(maxY, p.y + p.r)
         }
         this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (this.canvas.height * 0.8) / (maxY - minY)))
+        let sx = 0
+        let sy = 0
+        for (const p of this.body.points) {
+          sx += p.x / this.body.points.length
+          sy += p.y / this.body.points.length
+        }
+        this.cam = { x: sx, y: sy }
         break
       }
       case 'reset':

@@ -189,8 +189,17 @@ export const DEFAULT_SKELETON = NORMAL.id
  */
 const custom = new Map<string, SkeletonScheme>()
 
+/**
+ * Bumped whenever a scheme is (re)registered. The game watches this number:
+ * without it, pressing "apply" twice with the same id would look like nothing
+ * changed, because the id is what the scene compares.
+ */
+let revision = 0
+export const skeletonRevision = (): number => revision
+
 export const registerSkeleton = (scheme: SkeletonScheme): SkeletonScheme => {
   custom.set(scheme.id, scheme)
+  revision++
   return scheme
 }
 

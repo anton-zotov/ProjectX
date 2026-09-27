@@ -317,11 +317,16 @@ export class Ragdoll {
    */
   private readonly hits = new Map<number, { vx: number; vy: number; x: boolean; y: boolean }>()
   /**
-   * Pairs of circles that are not linked to each other and are close enough to
-   * matter: they are pushed apart so that no two circles of the body ever
-   * intersect (the two legs, a limb and the body, the head and the body).
+   * THE PARTS OF THE BODY DO NOT COLLIDE WITH EACH OTHER. A head may pass
+   * through an arm, a thigh through the pelvis: the frame resists only through
+   * its skeleton (links, bones, hinges, and the floor/walls). Internal
+   * collision was tried (a push between unlinked circles, a gentler one between
+   * the two legs) and it is a trap: the frame starts fighting itself, jams in
+   * poses it cannot leave - a hip caught on the pelvis after a split, an arm
+   * unable to swing over the shoulder - and the fix for every such jam is
+   * another special case. A ragdoll that lets its own parts overlap has one
+   * rule instead of six.
    */
-  private readonly contacts: Array<[number, number, boolean]> = []
   /** Rigid bones: circles straightened around their hinge every iteration. */
   private readonly bones: Bone[] = []
   /**
@@ -496,29 +501,6 @@ export class Ragdoll {
         if (parentPart === 'head' && chain.at.length > 1) {
           this.addBrace(from + 1, parent, LIMITS.neckFold, 'brace', LIMITS.neckGrow)
         }
-      }
-    }
-
-    // Which pairs of circles have to be kept apart. Linked circles are handled
-    // by their link (which already stops them overlapping); everything else
-    // that starts out close enough to ever meet goes into the list - except the
-    // two limbs of a pair: the left and the right hip hang on the same body
-    // circle and must not shove each other around.
-    const linked = new Set(this.links.map((l) => (l.a < l.b ? `${l.a}-${l.b}` : `${l.b}-${l.a}`)))
-    const twins = (a: PartId, b: PartId): boolean =>
-      (a === 'legL' && b === 'legR') ||
-      (a === 'legR' && b === 'legL') ||
-      (a === 'armL' && b === 'armR') ||
-      (a === 'armR' && b === 'armL')
-    for (let i = 0; i < this.points.length; i++) {
-      for (let j = i + 1; j < this.points.length; j++) {
-        if (linked.has(`${i}-${j}`)) continue
-        const p1 = this.points[i]
-        const p2 = this.points[j]
-        const soft = twins(p1.part, p2.part)
-        const touching = p1.r + p2.r
-        const apart = Math.hypot(p2.x - p1.x, p2.y - p1.y)
-        if (apart < touching * SIM.contactReach) this.contacts.push([i, j, soft])
       }
     }
 
@@ -811,13 +793,11 @@ export class Ragdoll {
     for (const link of this.links) link.lambda = 0
     this.hits.clear()
     for (let i = 0; i < SIM.solverIterations; i++) {
-      // Order matters, and it is decided by what is most visible:
-      // walls first, then the contacts, and the LINKS last - a bone must come
-      // out of a substep straight, otherwise the contacts and the wall clamps
-      // leave it bent (measured: the thigh bent by 22-30 degrees even though
-      // every link inside it is rigid).
+      // Order matters, and it is decided by what is most visible: the walls
+      // first, the LINKS last - a bone must come out of a substep straight,
+      // otherwise the wall clamps leave it bent (measured: the thigh bent by
+      // 22-30 degrees even though every link inside it is rigid).
       this.clampToWalls(bounds)
-      this.separate()
       for (const link of this.links) this.satisfy(link, dt)
     }
 
@@ -855,55 +835,6 @@ export class Ragdoll {
     p2.py += relY * k * w2
   }
 
-
-  /**
-   * Push apart the circles that are not linked to each other, so that no two
-   * circles of the body intersect. This is what keeps the two legs two legs:
-   * without it they simply pass through one another in the air (measured: they
-   * overlap completely in 98% of frames) and read as one thick leg.
-   *
-   * The two limbs of a pair (left leg against right leg, left arm against the
-   * right arm) are handled GENTLY. A hard shove there is felt as the hips
-   * knocking each other about; the soft one only stops them sinking in.
-   */
-  private separate(): void {
-    for (const [i, j, soft] of this.contacts) {
-      const p1 = this.points[i]
-      const p2 = this.points[j]
-      let dx = p2.x - p1.x
-      let dy = p2.y - p1.y
-      const d = Math.hypot(dx, dy)
-      const min = p1.r + p2.r
-      if (d >= min || d < 1e-6) continue
-      const w1 = p1.im
-      const w2 = p2.im
-      const w = w1 + w2
-      if (w === 0) continue
-
-      // part of the overlap per iteration: the rest of the loop finishes the
-      // job, and pushing it all at once makes the pair jitter
-      const corr = ((min - d) / d) * (soft ? SIM.twinPush : 0.5)
-      p1.x -= dx * corr * (w1 / w)
-      p1.y -= dy * corr * (w1 / w)
-      p2.x += dx * corr * (w2 / w)
-      p2.y += dy * corr * (w2 / w)
-
-      if (!soft) continue
-      // ...and take the fight out of the pair: damp the velocity ALONG the line
-      // between them (a proper damper - remove a share of the approach), so two
-      // limbs settle instead of bouncing off each other
-      const nx = dx / d
-      const ny = dy / d
-      const relX = p2.x - p2.px - (p1.x - p1.px)
-      const relY = p2.y - p2.py - (p1.y - p1.py)
-      const relN = relX * nx + relY * ny
-      const imp = (0.25 * relN) / w
-      p1.px -= imp * w1 * nx
-      p1.py -= imp * w1 * ny
-      p2.px += imp * w2 * nx
-      p2.py += imp * w2 * ny
-    }
-  }
 
   /**
    * Solve one link: hard limits first (no overlap, no overstretch), then the

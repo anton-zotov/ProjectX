@@ -1,7 +1,7 @@
 import type { GameContext, Scene } from '../scene'
 import { BODY, DEFAULTS, SIM } from '../game/config'
 import { Ragdoll } from '../game/ragdoll'
-import { DEFAULT_SKELETON, skeletonById } from '../game/skeletons'
+import { DEFAULT_SKELETON, skeletonById, skeletonRevision } from '../game/skeletons'
 
 /* ------------------------------------------------------------------ *
  *  Screen / field geometry
@@ -148,6 +148,8 @@ export class ArenaScene implements Scene {
   private builtScale = 0
   /** The scheme the current frame was built from. */
   private builtSkeleton = ''
+  /** The scheme revision the frame was built from (the editor bumps it). */
+  private builtRevision = -1
   /** Elasticity the current ragdoll was last told about. */
   private builtElasticity = 0
   /** Joint grip last handed to the ragdoll. */
@@ -175,6 +177,7 @@ export class ArenaScene implements Scene {
   private buildBody(): Ragdoll {
     this.builtScale = this.settings.bodyScale
     this.builtSkeleton = this.settings.skeleton
+    this.builtRevision = skeletonRevision()
     this.builtElasticity = this.settings.elasticity
     const body = new Ragdoll(
       this.worldW / 2,
@@ -220,7 +223,9 @@ export class ArenaScene implements Scene {
     // the body scale is geometry, not a live parameter: rebuild the ragdoll
     if (this.builtScale !== this.settings.bodyScale) this.respawn()
     // a different scheme is a different body: rebuild it
-    if (this.builtSkeleton !== this.settings.skeleton) this.respawn()
+    if (this.builtSkeleton !== this.settings.skeleton || this.builtRevision !== skeletonRevision()) {
+      this.respawn()
+    }
     // the elasticity is live: dragging the slider is felt at once
     if (this.builtElasticity !== this.settings.elasticity) {
       this.builtElasticity = this.settings.elasticity
