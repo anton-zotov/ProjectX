@@ -17,7 +17,11 @@ export interface ChainScheme {
   part: string
   /** How many circles the chain has. */
   count: number
-  /** Radius as a factor of the body circle (the head uses a bigger one). */
+  /**
+   * Radius as a factor of the body circle. NOT used by the head: the head's
+   * size lives in `body.headRadius` (one number, one place - it decides both
+   * how big the head is and where the first vertebra sits).
+   */
   radius?: number
   /**
    * The body circle this chain hangs on: a circle name ('torso0'), or the
@@ -60,13 +64,65 @@ export interface SkeletonScheme {
   /** The body itself: how many vertebrae, the head, the gaps. */
   body: {
     count: number
-    /** Head radius as a factor of the body circle. */
+    /** Head radius as a factor of the body circle. THE size of the head. */
     headRadius: number
     /** Where the first vertebra sits: (headR + R) * neckGap below the head. */
     neckGap: number
   }
+  /**
+   * The neck: the head hangs on the first vertebra by one link, and this second
+   * link is what turns a free hinge into a neck - it stops the head from
+   * spinning all the way round, so it can only nod and shake a little. Both
+   * numbers are distances as factors of the link's own length: `fold` is how
+   * far it may shorten, `grow` how far it may stretch.
+   */
+  neck?: { fold: number; grow: number }
   /** Every chain, in layout order. The body chain must come first. */
   chains: ChainScheme[]
+}
+
+/**
+ * Is this scheme buildable? Returns a human-readable reason, or null when it is
+ * fine. The editor and the game both call it before using a scheme: a scheme
+ * that points at a circle that does not exist used to take the whole frame -
+ * and with it the game loop - down with it.
+ */
+export const validateScheme = (scheme: SkeletonScheme): string | null => {
+  if (!scheme || typeof scheme !== 'object') return 'схема пустая'
+  if (!scheme.body || !Number.isFinite(scheme.body.count) || scheme.body.count < 1) {
+    return 'у тела должно быть хотя бы одно звено'
+  }
+  if (!Array.isArray(scheme.chains) || !scheme.chains.length) return 'в схеме нет ни одной цепочки'
+  const parts = new Set<string>()
+  for (const chain of scheme.chains) {
+    if (!chain.part) return 'у цепочки нет имени'
+    if (parts.has(chain.part)) return `две цепочки с одним именем: ${chain.part}`
+    parts.add(chain.part)
+    if (!Number.isFinite(chain.count) || chain.count < 1) return `${chain.part}: кружков должно быть ≥ 1`
+    if (chain.hinge !== undefined) {
+      const h = Math.round(chain.hinge)
+      if (h < 1 || h > chain.count - 1) {
+        return `${chain.part}: шарнир №${chain.hinge} — это не кружок цепочки (можно 1…${chain.count - 1})`
+      }
+    }
+    if (chain.attachTo && !circleExists(chain.attachTo, scheme)) {
+      return `${chain.part}: некуда крепить — кружка «${chain.attachTo}» нет`
+    }
+    if (chain.attachAlong && !circleExists(chain.attachAlong, scheme)) {
+      return `${chain.part}: вторая связь ведёт к несуществующему кружку «${chain.attachAlong}»`
+    }
+  }
+  return null
+}
+
+/** Does this circle name exist in the scheme ('neck'/'pelvis' are keywords)? */
+const circleExists = (name: string, scheme: SkeletonScheme): boolean => {
+  if (name === 'head') return true
+  if (name === 'neck') return true
+  if (name === 'pelvis') return scheme.body.count >= 1
+  const m = /^torso(\d+)$/.exec(name)
+  if (m) return Number(m[1]) < scheme.body.count
+  return scheme.chains.some((c) => c.part === name)
 }
 
 /* ------------------------------------------------------------------ *
@@ -92,8 +148,9 @@ export const NORMAL: SkeletonScheme = {
   id: 'normal',
   name: 'обычный (24 кружка)',
   body: { count: 5, headRadius: 1.8, neckGap: 1 },
+  neck: { fold: 0.94, grow: 1.01 },
   chains: [
-    { part: 'head', count: 1, radius: 1.8 },
+    { part: 'head', count: 1 },
     // flex: false - the body is welded into one rigid bone. (The `vertebrae`
     // scheme below turns it on: a spine that gives and bends instead.)
     { part: 'torso', count: 5, attachTo: 'head', flex: false },
@@ -150,8 +207,9 @@ export const VERTEBRAE: SkeletonScheme = {
   id: 'vertebrae',
   name: 'позвонки (26 кружков)',
   body: { count: 5, headRadius: 1.8, neckGap: 0.64 },
+  neck: { fold: 0.94, grow: 1.01 },
   chains: [
-    { part: 'head', count: 1, radius: 1.8 },
+    { part: 'head', count: 1 },
     { part: 'torso', count: 5, attachTo: 'head', flex: true },
     { part: 'armL', count: 4, attachTo: 'torso1', attachAngle: 45, angle: 90, hinge: 1, window: 90 },
     { part: 'armR', count: 4, attachTo: 'torso1', attachAngle: 45, angle: 90, hinge: 1, window: 90 },

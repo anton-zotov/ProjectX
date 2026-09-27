@@ -11,7 +11,13 @@
  * ------------------------------------------------------------------ */
 import { SIM } from './game/config'
 import { Ragdoll } from './game/ragdoll'
-import { allSkeletons, registerSkeleton, type ChainScheme, type SkeletonScheme } from './game/skeletons'
+import {
+  allSkeletons,
+  registerSkeleton,
+  validateScheme,
+  type ChainScheme,
+  type SkeletonScheme,
+} from './game/skeletons'
 
 const STORE_KEY = 'projectx.skeleton'
 /** The editor's own little world: a floor and walls, so falling is visible. */
@@ -116,6 +122,7 @@ export class SkeletonEditor {
       <div class="ed-head">
         <b>редактор скелета</b>
         <span class="ed-name"></span>
+        <span class="ed-note"></span>
         <span class="ed-spacer"></span>
         <button data-act="reset" type="button">сброс</button>
         <button data-act="save" type="button">сохранить в браузере</button>
@@ -394,6 +401,7 @@ export class SkeletonEditor {
   private renderProps(): void {
     if (this.selected === -1) {
       const body = this.scheme.body
+      const neck = this.scheme.neck ?? { fold: 0.94, grow: 1.01 }
       this.props.innerHTML =
         `<div class="ed-title">свойства тела</div>` +
         `<div class="ed-hint">Тело — это позвоночник: позвонки, голова и зазор шеи.</div>` +
@@ -401,7 +409,20 @@ export class SkeletonEditor {
         `<label class="ed-field"><span>позвонков</span><input type="number" step="1" data-body="count" value="${body.count}" /></label>` +
         `<label class="ed-field"><span>голова, × тела</span><input type="number" step="0.1" data-body="headRadius" value="${body.headRadius}" /></label>` +
         `<label class="ed-field"><span>зазор шеи, ×</span><input type="number" step="0.05" data-body="neckGap" value="${body.neckGap}" /></label>` +
-        `<div class="ed-hint tight">зазор шеи: насколько первый позвонок ниже центра головы (1 = касаются)</div>`
+        `<div class="ed-hint tight">зазор шеи: насколько первый позвонок ниже центра головы (1 = касаются)</div>` +
+        `<div class="ed-group">шея: вторая связь головы</div>` +
+        `<div class="ed-hint">Голова висит на одном звене; эта связь не даёт ей крутиться вокруг — только кивать и мотать. Значения — доли длины связи.</div>` +
+        `<label class="ed-field"><span>сжатие</span><input type="number" step="0.01" data-neck="fold" value="${neck.fold}" /></label>` +
+        `<label class="ed-field"><span>растяжение</span><input type="number" step="0.01" data-neck="grow" value="${neck.grow}" /></label>`
+      this.props.querySelectorAll('input[data-neck]').forEach((el) =>
+        el.addEventListener('change', () => {
+          const input = el as HTMLInputElement
+          const key = input.dataset.neck as 'fold' | 'grow'
+          this.scheme.neck = { fold: neck.fold, grow: neck.grow, [key]: Number(input.value) }
+          this.reset()
+          this.render()
+        }),
+      )
       this.props.querySelectorAll('input[data-body]').forEach((el) =>
         el.addEventListener('change', () => {
           const input = el as HTMLInputElement
@@ -424,6 +445,10 @@ export class SkeletonEditor {
       `<div class="ed-title">свойства: ${chain.part}</div>`,
       `<div class="ed-hint">Стиль сустава: <b>${style === 'window' ? 'окно' : 'распорка'}</b>` +
         ` — поля другого стиля не используются этой схемой.</div>`,
+      chain.part === 'head'
+        ? '<div class="ed-hint">Размер головы задаётся в свойствах ТЕЛА («голова, × тела»): ' +
+          'он же решает, где стоит первый позвонок.</div>'
+        : '',
     ]
     for (const group of GROUPS) {
       const fields = group.fields.filter((f) => f.appliesTo === undefined || f.appliesTo === style)
@@ -549,14 +574,31 @@ export class SkeletonEditor {
         return
       }
       case 'apply': {
+        // A scheme that points at a circle which is not there used to take the
+        // frame (and with it the game loop) down: the frame went non-finite and
+        // nothing on screen moved again. Now it is refused out loud.
+        const problem = validateScheme(this.scheme)
+        if (problem) {
+          this.note(`не применено: ${problem}`, true)
+          return
+        }
         this.scheme.id = 'edited'
         this.scheme.name = `правленая (${this.scheme.chains.reduce((n, c) => n + c.count, 0)} кружков)`
         registerSkeleton(this.scheme)
         this.onApply?.(this.scheme)
-        break
+        this.note('применено: игра пересобрала фигуру')
+        return
       }
     }
     this.render()
+  }
+
+  /** A short message in the header: what happened, or why it did not. */
+  private note(text: string, bad = false): void {
+    const el = this.overlay.querySelector('.ed-note')
+    if (!el) return
+    el.textContent = text
+    el.classList.toggle('bad', bad)
   }
 
   private async importFile(input: HTMLInputElement): Promise<void> {

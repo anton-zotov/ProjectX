@@ -205,7 +205,8 @@ export const buildChains = (scheme: SkeletonScheme): Chain[] => {
 
   return scheme.chains.map((c) => {
     const side = c.part.endsWith('L') ? -1 : c.part.endsWith('R') ? 1 : 0
-    const radius = R * (c.radius ?? 1)
+    // the head's size has ONE owner: body.headRadius
+    const radius = c.part === 'head' ? R * scheme.body.headRadius : R * (c.radius ?? 1)
     const at: ReadonlyArray<readonly [number, number]> =
       c.part === 'head'
         ? [[0, 0]]
@@ -261,8 +262,12 @@ const nameOf = (chain: Chain, i: number): string =>
   chain.at.length === 1 ? chain.prefix : `${chain.prefix}${i}`
 
 /** Which link tuning a body section uses (the two arms share 'arm'). */
-const linkKindOf = (part: PartId): BodyKind =>
-  part === 'armL' || part === 'armR' ? 'arm' : part === 'legL' || part === 'legR' ? 'leg' : part
+const linkKindOf = (part: PartId): BodyKind => {
+  if (part === 'armL' || part === 'armR') return 'arm'
+  if (part === 'legL' || part === 'legR') return 'leg'
+  // an unknown name (a hand-made scheme) still gets a sane stiffness
+  return part === 'head' || part === 'torso' || part === 'attach' ? part : 'arm'
+}
 
 /**
  * A rigid bone: circles that keep their shape.
@@ -448,7 +453,10 @@ export class Ragdoll {
 
       // how the first circle of this chain hangs on the rest of the body.
       if (chain.attachTo) {
-        const parent = this.indexOf(chain.attachTo)
+        // a scheme written by hand may point at a circle that is not there:
+        // skip the attachment instead of throwing (that killed the game loop)
+        const parent = this.indexOr(chain.attachTo)
+        if (parent < 0) continue
         this.addLink(parent, from, chain.attachKind ?? 'attach', true, true)
         const parentPart = linkKindOf(this.points[parent].part)
         if (chain.window !== undefined && chain.at.length > 1) {
@@ -484,13 +492,13 @@ export class Ragdoll {
           const swing = chain.swing ?? Math.max(LIMITS.swing[parentPart], LIMITS.swing[limb])
           if (swing > 0 && chain.at.length > 1) {
             this.addBrace(parent, from + 1, Math.cos(swing / 2), 'pose')
-            if (chain.attachAlong) {
+            if (chain.attachAlong && this.indexOr(chain.attachAlong) >= 0) {
               // The third link is what makes the attitude unique. Two links have
               // a mirror solution (the limb turned inside out) in which every
               // length is the same again - the springs would see nothing wrong
               // and leave it there. This one cannot be short enough in that
               // solution, so the limb cannot get there at all.
-              this.addBrace(this.indexOf(chain.attachAlong), from, 0.45, 'pose', 1.5)
+              this.addBrace(this.indexOr(chain.attachAlong), from, 0.45, 'pose', 1.5)
             }
           }
         }
@@ -499,7 +507,8 @@ export class Ragdoll {
         // body turns that free hinge into a neck - it can nod and shake a
         // little and no more (measured: a 120 degree turn is impossible).
         if (parentPart === 'head' && chain.at.length > 1) {
-          this.addBrace(from + 1, parent, LIMITS.neckFold, 'brace', LIMITS.neckGrow)
+          const neck = this.scheme.neck ?? { fold: LIMITS.neckFold, grow: LIMITS.neckGrow }
+          this.addBrace(from + 1, parent, neck.fold, 'brace', neck.grow)
         }
       }
     }
@@ -710,6 +719,15 @@ export class Ragdoll {
     const i = this.index.get(name)
     if (i === undefined) throw new Error(`unknown skeleton point: ${name}`)
     return i
+  }
+
+  /**
+   * The same lookup, but for names that come from OUTSIDE the engine (a scheme
+   * written by hand in the editor): -1 instead of an exception, so a mistyped
+   * circle costs one link rather than the whole game loop.
+   */
+  private indexOr(name: string): number {
+    return this.index.get(name) ?? -1
   }
 
   point(name: string): Circle {

@@ -26,7 +26,7 @@ const { mods, close } = await loadModules([RAGDOLL, CONFIG, ARENA, SKELETONS_MOD
 const { Ragdoll, POINT_NAMES } = mods[RAGDOLL]
 const { SIM, DEFAULTS } = mods[CONFIG]
 const { ArenaScene, defaultSettings } = mods[ARENA]
-const { SKELETONS } = mods[SKELETONS_MOD]
+const { SKELETONS, validateScheme } = mods[SKELETONS_MOD]
 test.after(close)
 
 const DT = SIM.dt
@@ -278,4 +278,27 @@ test('GUARANTEE: every skeleton scheme builds a working frame', () => {
     for (let i = 0; i < 60 * 3; i++) run(r, 1, fight)
     assert.ok(finite(r), `${scheme.id}: the frame stays finite`)
   }
+})
+
+test('GUARANTEE: a hand-made scheme cannot kill the frame', () => {
+  // The editor lets a person write any scheme. One that points at a circle that
+  // is not there used to make the frame non-finite, and with it the whole game
+  // loop stopped for good (measured: "the game hangs after applying a few
+  // times"). Either the scheme is refused, or the frame ignores the bad link.
+  const broken = {
+    id: 'broken',
+    name: 'broken',
+    body: { count: 5, headRadius: 1.8, neckGap: 1 },
+    chains: [
+      { part: 'head', count: 1 },
+      { part: 'torso', count: 5, attachTo: 'head' },
+      { part: 'armL', count: 4, attachTo: 'torso9', angle: 40, hinge: 1 },
+    ],
+  }
+  assert.ok(validateScheme(broken), 'a link to a circle that does not exist is refused')
+  assert.equal(validateScheme(SKELETONS[0]), null, 'and the real schemes pass')
+
+  const r = new Ragdoll(500, 200, 1, broken)
+  for (let i = 0; i < 120; i++) run(r, 1, fight)
+  assert.ok(finite(r), 'even a broken scheme leaves the frame with real numbers')
 })
