@@ -115,6 +115,8 @@ interface Chain {
    * that the physics is universal (see docs/VISION.md).
    */
   hinge?: number
+  /** Which way the hinge folds: +1 or -1 (see `LIMITS.hingeSide`). */
+  hingeSide?: number
   /** How far the limb may swing from its attitude, radians (a props joint). */
   swing?: number
   /** A one-sided window of the joint, radians (a single-link joint). */
@@ -236,6 +238,7 @@ export const buildChains = (scheme: SkeletonScheme): Chain[] => {
       radius,
       at,
       hinge: c.hinge,
+    hingeSide: c.hingeSide,
       swing: c.swing,
       window: c.window,
       flex: c.flex,
@@ -370,6 +373,17 @@ export class Ragdoll {
   /** Is the side guard on right now? (SIM.sideGuard, the admin checkbox.) */
   private sideGuard = SIM.sideGuard
   /**
+   * THE WAY each hinge folds.
+   *
+   * The fold limit is a distance, and a distance cannot tell a knee folding the
+   * right way from one folding backwards - both shorten the same link by the
+   * same amount. So the sign of the fold's angle is remembered here, and a hinge
+   * that folds the wrong way is turned back, exactly like a limb that has gone
+   * over to the other side of the body. Measured without it: dragging a foot
+   * sideways folded the knee 86 degrees backwards and left the leg inverted.
+   */
+  private readonly hinges: Array<{ from: number; at: number; tip: number; sign: number }> = []
+  /**
    * How much harder the force point has to be pushed than the whole body, so
    * that the thrust setting means "the acceleration of the body".
    */
@@ -457,6 +471,13 @@ export class Ragdoll {
       if (!flex) {
         for (const bone of bones) {
           if (bone.length > 1) this.bones.push(this.makeBone(bone.map((i) => from + i)))
+        }
+      }
+      // a hinge also remembers which way it may fold (see `hingeGuards`)
+      if (hinge >= 1 && hinge < chain.at.length - 1) {
+        const sign = chain.hingeSide ?? LIMITS.hingeSide[limb] ?? 1
+        if (sign !== 0) {
+          this.hinges.push({ from: from + hinge - 1, at: from + hinge, tip: from + chain.at.length - 1, sign })
         }
       }
 
@@ -762,6 +783,67 @@ export class Ragdoll {
     this.sideGuard = on
   }
 
+  /**
+   * Turn a hinge back if it is folding the wrong way.
+   *
+   * The fold's angle is the turn from the first bone to the second at the hinge
+   * circle; the sign it should have is data. When it has the other sign the
+   * lower bone is rotated back about the hinge circle until the fold is at the
+   * boundary, and the part of its motion that was carrying it further the wrong
+   * way is dropped - the same wall-like treatment the side guard uses, once per
+   * substep. A hinge within its own side is never touched.
+   */
+  private holdFold(): void {
+    if (!this.hinges.length) return
+    for (const hinge of this.hinges) {
+      const first = this.points[hinge.from]
+      const at = this.points[hinge.at]
+      const last = this.points[hinge.tip]
+      const a = { x: at.x - first.x, y: at.y - first.y }
+      const b = { x: last.x - at.x, y: last.y - at.y }
+      const la = Math.hypot(a.x, a.y) || 1
+      const lb = Math.hypot(b.x, b.y) || 1
+      // the fold's own angle, as a signed turn
+      const cross = (a.x * b.y - a.y * b.x) / (la * lb)
+      const dot = (a.x * b.x + a.y * b.y) / (la * lb)
+      const fold = Math.atan2(cross, dot)
+      const signed = fold * hinge.sign
+      // a dead band: a straight hinge has no direction, and a knee that is a
+      // little past straight is not an injury - correcting that made the guard
+      // fire all the time and cost the frame its flight (measured: 70 px of
+      // flight instead of 350). Only a real inversion is turned back.
+      const band = 0.35
+      if (signed > -band) continue
+      // how far the lower bone must turn to sit on the band's edge
+      const delta = hinge.sign * (-band - signed)
+      const cos = Math.cos(delta)
+      const sin = Math.sin(delta)
+      const nx = -Math.sin(Math.atan2(b.y, b.x))
+      const ny = Math.cos(Math.atan2(b.y, b.x))
+      const wrong = -hinge.sign
+      for (let i = hinge.at; i <= hinge.tip; i++) {
+        const p = this.points[i]
+        const dx = p.x - at.x
+        const dy = p.y - at.y
+        p.x = at.x + dx * cos - dy * sin
+        p.y = at.y + dx * sin + dy * cos
+        // velocity: keep what is along the bone, drop what folds it backwards
+        const vx = p.x - p.px
+        const vy = p.y - p.py
+        const over = vx * nx * wrong + vy * ny * wrong
+        if (over > 0) {
+          p.px = p.x - (vx - over * nx * wrong)
+          p.py = p.y - (vy - over * ny * wrong)
+        } else {
+          const ex = p.px - at.x
+          const ey = p.py - at.y
+          p.px = at.x + ex * cos - ey * sin
+          p.py = at.y + ex * sin + ey * cos
+        }
+      }
+    }
+  }
+
   /** Remember the corridor of a limb: which side of the body axis it is on. */
   private addGuard(from: number, tip: number): void {
     if (this.axisA < 0 || this.axisB < 0 || tip <= from) return
@@ -980,21 +1062,29 @@ export class Ragdoll {
       // first, the LINKS last - a bone must come out of a substep straight,
       // otherwise the wall clamps leave it bent (measured: the thigh bent by
       // 22-30 degrees even though every link inside it is rigid).
-      // Order matters. The walls are applied first, then the guard turns a limb
-      // back, then the links finish: with the guard before the walls the
-      // correction was partly undone and a split stopped coming back (measured:
-      // the leg settled at 71 degrees instead of 43). A second wall pass at the
-      // end of the iteration makes sure nothing is ever left outside the arena.
+      //
+      // The bone fit is interleaved instead of running once at the end: a fit
+      // MOVES circles, so a fit that runs last can leave a link outside its hard
+      // limit (measured: the carriers sank 6.15 px into each other and a bone
+      // bowed 2.87 px off its axis once the hinge guard was added).
       this.clampToWalls(bounds)
       for (const link of this.links) this.satisfy(link, dt)
+      if (i % 6 === 5) for (const bone of this.bones) this.straighten(bone)
     }
 
-    // 3c. The side guard: a limb that has gone over the body's centre line is
-    //     put back on its own side, once per substep (see `holdSide`).
+    // 3c. The guards, once per substep: a limb that has gone over the body's
+    //     centre line, and a hinge that is folding backwards (see `holdSide`
+    //     and `holdFold`).
     this.holdSide()
+    this.holdFold()
 
-    // 3b. Fit every bone to its rest shape: one rigid move, momentum kept
-    for (const bone of this.bones) this.straighten(bone)
+    // 3d. ...and then the links get the last word, with the fits interleaved
+    //     again, so the guards cannot leave a link out of its limits.
+    for (let i = 0; i < 6; i++) {
+      this.clampToWalls(bounds)
+      for (const link of this.links) this.satisfy(link, dt)
+      if (i % 3 === 2) for (const bone of this.bones) this.straighten(bone)
+    }
 
     // 4. Damp the shape springs: a spring alone would swing for ever
     for (const link of this.links) {

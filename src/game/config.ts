@@ -242,6 +242,15 @@ export const LIMITS = {
    */
   hinge: { head: 0, torso: 0.25, arm: 1.2, leg: 1.7, attach: 0 },
   /**
+   * WHICH WAY a hinge folds. The fold limit above is a DISTANCE, and a distance
+   * is the same for a knee folding backwards and one folding forwards - so on
+   * its own it allows the joint to be pushed the wrong way and stay there
+   * (measured: dragging a foot sideways folded the knee 86 degrees backwards and
+   * left it inverted). This is the sign of the fold's own angle at rest: +1 or
+   * -1, per limb kind, and a scheme may override it per chain.
+   */
+  hingeSide: { head: 0, torso: 1, arm: -1, leg: 1, attach: 0 },
+  /**
    * THE SIDE OF THE BODY a limb belongs to: how far over the body's centre line
    * a limb may go before the frame counts it as crossed and turns it back. It is
    * a fraction of the limb's own length, so it means the same angle for a short

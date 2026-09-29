@@ -44,6 +44,12 @@ export interface ChainScheme {
   step?: number
   /** Which circle of the chain is the hinge (the elbow, the knee). */
   hinge?: number
+  /**
+   * Which way the hinge folds: +1 or -1, i.e. the sign its angle has when it
+   * bends the way it should. Leave it out to use the default for that kind of
+   * limb (`LIMITS.hingeSide`).
+   */
+  hingeSide?: number
   /** How much the hinge is already bent in the rest pose (degrees). */
   preBend?: number
   /** How far the limb may swing from its attitude, radians (props joint). */
