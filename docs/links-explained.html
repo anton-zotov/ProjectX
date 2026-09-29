@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Как устроен чувачок: связи, распорки, кости, суставы</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d0f14;
+        --panel: #12171d;
+        --line: #1f2a25;
+        --text: #d8e6dd;
+        --dim: #8fa79a;
+        --green: #9fe8c6;
+        --link: #cfe3d8;
+        --brace: #ffb347;
+        --bone: #c8ff6b;
+        --hinge: #ff7ad9;
+        --joint: #5ec8ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0 16px 64px;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+      }
+      header,
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 28px 0 6px;
+        font-size: 26px;
+      }
+      h2 {
+        margin: 0 0 6px;
+        font-size: 19px;
+        color: var(--green);
+      }
+      h3 {
+        margin: 26px 0 8px;
+        font-size: 17px;
+      }
+      p {
+        margin: 0 0 10px;
+      }
+      a {
+        color: var(--joint);
+      }
+      .lead {
+        color: var(--dim);
+        max-width: 70ch;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        margin: 14px 0 6px;
+        padding: 12px 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 13px;
+      }
+      .legend i {
+        width: 26px;
+        height: 3px;
+        border-radius: 2px;
+      }
+      .card {
+        display: grid;
+        grid-template-columns: 440px minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+        margin: 18px 0 30px;
+        padding: 16px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+      @media (max-width: 860px) {
+        .card {
+          grid-template-columns: 1fr;
+        }
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        background: #0b0f13;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 10px;
+        min-height: 30px;
+      }
+      button {
+        padding: 6px 14px;
+        color: var(--green);
+        background: #101a16;
+        border: 1px solid rgba(90, 255, 170, 0.3);
+        border-radius: 8px;
+        font: inherit;
+        cursor: pointer;
+        user-select: none;
+      }
+      button:active,
+      button.on {
+        background: #163024;
+      }
+      input[type='range'] {
+        flex: 1;
+        accent-color: #3fe09b;
+      }
+      .readouts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed var(--line);
+        font: 13px/1.5 ui-monospace, Consolas, monospace;
+        color: var(--green);
+      }
+      .readouts .bad {
+        color: #ff8a7a;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 4px;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 7px 10px;
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        color: var(--dim);
+        font-weight: 400;
+      }
+      code {
+        padding: 1px 5px;
+        background: #0b0f13;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        font-size: 13px;
+      }
+      .note {
+        padding: 12px 14px;
+        background: #101a16;
+        border: 1px solid rgba(90, 255, 170, 0.25);
+        border-radius: 12px;
+      }
+      footer {
+        max-width: 1180px;
+        margin: 30px auto 0;
+        color: var(--dim);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Как устроен чувачок: связи, распорки, кости, суставы</h1>
+      <p class="lead">
+        Это не игра, а разбор по частям: каждая сцена внизу — маленькая физика из тех же связей, что в игре,
+        но по одной за раз. Крупно, медленно и с числами, чтобы было видно, что именно делает каждая связь.
+        Рядом с каждой сценой — что в ней происходит и что из этого следует для нашего скелета.
+      </p>
+      <div class="legend">
+        <span><i style="background: var(--link)"></i> звено (держит расстояние)</span>
+        <span><i style="background: var(--brace)"></i> распорка (держит сгиб)</span>
+        <span><i style="background: var(--bone)"></i> кость (сварено намертво)</span>
+        <span><i style="background: var(--hinge)"></i> шарнир (гнётся в одном месте)</span>
+        <span><i style="background: var(--joint)"></i> связь отношения (держит поворот)</span>
+      </div>
+      <p class="note">
+        Главное, что стоит унести из этой страницы: <b>в обычной связи нет угла</b>. Она держит только расстояние
+        между двумя кружками, поэтому пара кружков может свободно вращаться друг вокруг друга. Всё, что в скелете
+        «держит форму», — это дополнительные связи поверх: распорки (через один кружок), сварка внутри костей и связи
+        отношения к телу. Ниже — по одной сцене на каждую вещь.
+      </p>
+
+      <h3>И сразу ответ на вопрос про три кружка</h3>
+      <p>
+        Если тело состоит из трёх кружков, то <b>распорка ровно одна — между 1-м и 3-м</b> (вторая сцена). На четыре
+        кружка распорок две (1↔3 и 2↔4), на пять — три. То есть распорок всегда на две меньше, чем кружков. Так же
+        считаются и связки внутри шарнира.
+      </p>
+    </header>
+
+    <main id="scenes"></main>
+
+    <footer>
+      Страница живёт рядом с игрой (<code>/links-explained.html</code>) и считается тем же кодом:
+      <code>docs/mini-physics.js</code> — физика сцен, <code>docs/links-explained.html</code> — то, что ты видишь.
+      Проверка сцен без браузера: <code>node devtools/mini-check.mjs</code>.
+    </footer>
+
+    <script type="module">
+      import { startPage } from './mini-page.js'
+
+      startPage()
+    </script>
+  </body>
+</html>

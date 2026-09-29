@@ -34,6 +34,8 @@ export interface GameSettings {
   skeleton: string
   jointGrip: number // 0..1: how hard the joints hold their angle
   showTuning: boolean // paint what the sliders change over the character
+  /** Draw every link as a breathing spring (the skeleton, live). */
+  springs: boolean
 }
 
 export const defaultSettings = (): GameSettings => ({
@@ -51,6 +53,7 @@ export const defaultSettings = (): GameSettings => ({
   skeleton: DEFAULT_SKELETON,
   jointGrip: 0.25, // 0 = springs only (floppy); 1 = joints hold, the frame stands
   showTuning: true, // the sliders are drawn on the figure while we tune
+  springs: false, // the links as springs: on demand, it is a busy picture
 })
 
 /* ------------------------------------------------------------------ *
@@ -378,6 +381,71 @@ export class ArenaScene implements Scene {
     // 3. what the admin sliders are doing, drawn over the character
     if (this.settings.showTuning) this.renderTuning(ctx)
 
+    // 4. the frame itself: every link as a spring (an optional view, so the
+    //    structure can be judged while it moves)
+    if (this.settings.springs) this.renderSprings(ctx)
+
+    ctx.restore()
+  }
+
+  /**
+   * Every link drawn as a SPRING: a coil between its two circles.
+   *
+   * This is a view, not decoration: the coil's width and colour say what kind
+   * of link it is and how stiff it is, and the coil BREATHES with the physics -
+   * a link that stretches unwinds, a link that is squeezed bunches up - so the
+   * work of the skeleton can be seen in motion instead of guessed from a still
+   * picture.
+   */
+  private renderSprings(ctx: CanvasRenderingContext2D): void {
+    const r = this.ragdoll
+    const SPRING_COLOR: Record<string, string> = {
+      head: '#ffd479',
+      torso: '#9fe8c6',
+      arm: '#5ec8ff',
+      leg: '#c58cff',
+      attach: '#3fe09b',
+      brace: '#8a9a94',
+      pose: '#ffb347',
+      hinge: '#ff7ad9',
+    }
+    ctx.save()
+    ctx.lineCap = 'round'
+    for (const link of r.links) {
+      const p1 = r.points[link.a]
+      const p2 = r.points[link.b]
+      const dx = p2.x - p1.x
+      const dy = p2.y - p1.y
+      const span = Math.hypot(dx, dy)
+      if (span < 1e-3) continue
+      const ux = dx / span
+      const uy = dy / span
+      const nx = -uy
+      const ny = ux
+      // how far this link is from its rest length: >0 stretched, <0 squeezed
+      const strain = Math.max(-1, Math.min(1, (span - link.rest) / Math.max(1, link.rest * 0.3)))
+      // a stiffer link (lower compliance) is drawn fatter and winds tighter
+      const stiffness = 1 - Math.min(1, link.compliance / 0.0004)
+      const turns = Math.max(3, Math.min(14, Math.round(span / 6)))
+      // stretched: the coil pulls straight; squeezed: it bunches up
+      const amplitude = (1.4 + 2.6 * stiffness) * (1 - 0.55 * Math.max(0, strain)) * (1 + 0.9 * Math.min(0, strain))
+      const step = span / turns
+      ctx.strokeStyle = SPRING_COLOR[link.kind] ?? '#cfe3d8'
+      ctx.globalAlpha = link.joint ? 0.95 : 0.75
+      ctx.lineWidth = 1 + 1.6 * stiffness
+      ctx.beginPath()
+      ctx.moveTo(p1.x, p1.y)
+      for (let i = 1; i <= turns; i++) {
+        const at = i * step
+        const side = i % 2 === 0 ? 1 : -1
+        // taper the ends so the coil meets the circles cleanly
+        const taper = Math.min(1, Math.min(i, turns - i + 1) / 1.5)
+        ctx.lineTo(p1.x + ux * at + nx * amplitude * side * taper, p1.y + uy * at + ny * amplitude * side * taper)
+      }
+      ctx.lineTo(p2.x, p2.y)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
     ctx.restore()
   }
 

@@ -75,6 +75,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const grid = document.querySelector<HTMLInputElement>('#s-grid')!
   const tuning = document.querySelector<HTMLInputElement>('#s-tuning')!
   const skeleton = document.querySelector<HTMLInputElement>('#s-skeleton')!
+  const springs = document.querySelector<HTMLInputElement>('#s-springs')!
   const quality = document.querySelector<HTMLInputElement>('#s-quality')!
   const profiler = document.querySelector<HTMLInputElement>('#s-profiler')!
   const schemePick = document.querySelector<HTMLSelectElement>('#s-scheme')!
@@ -167,6 +168,10 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   })
   skeleton.addEventListener('change', () => {
     s.showSkeleton = skeleton.checked
+  })
+  // the skeleton itself, live: every link drawn as a spring that breathes
+  springs.addEventListener('change', () => {
+    s.springs = springs.checked
   })
   // render quality: 2x buffer is smoother, 1x is ~4x cheaper for the GPU
   quality.addEventListener('change', () => {

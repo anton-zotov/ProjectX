@@ -177,7 +177,7 @@ export const NORMAL: SkeletonScheme = {
     },
     {
       part: 'legL',
-      count: 5,
+      count: 6,
       attachTo: 'pelvis',
       attachAngle: 36,
       attachAlong: 'torso3',
@@ -187,7 +187,7 @@ export const NORMAL: SkeletonScheme = {
     },
     {
       part: 'legR',
-      count: 5,
+      count: 6,
       attachTo: 'pelvis',
       attachAngle: 36,
       attachAlong: 'torso3',

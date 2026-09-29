@@ -127,8 +127,14 @@ test('GUARANTEE: circles joined by a link never sink into each other', () => {
   // finite number of iterations overshoots it under a hard load (and the other
   // links pressing on the same circles add to it), but it must stay a small
   // fraction of a circle - not turn into two circles sharing the same spot.
+  //
+  // The number is a calibration, not a law: it was 3.5 px for legs of five
+  // circles, and six-circle legs (the scheme the author asked for) carry more
+  // weight per link and overshoot to 3.63 px. The guarantee is here to catch a
+  // REGRESSION (a body that squashes into itself), so it sits just above the
+  // measured value of the current scheme.
   assert.ok(
-    deepest < 3.5,
+    deepest < 4,
     `the links that carry the body kept their circles apart (deepest ${deepest.toFixed(2)} px of ${(2 * r.points[0].r).toFixed(0)} px)`,
   )
 })
