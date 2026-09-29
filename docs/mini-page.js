@@ -42,19 +42,30 @@ export function startPage() {
     const readouts = card.querySelector('.readouts')
     host.append(card)
 
-    /** Fit the scene into the canvas and paint it, then print its numbers. */
-    const draw = () => {
+    /**
+     * The view is computed ONCE, from where the scene starts. Re-fitting it to
+     * the figure every frame makes the whole picture jump and appear to rotate
+     * as the figure moves - the physics was right and the camera was lying.
+     */
+    const view = (() => {
       const xs = frame.points.map((p) => p.x)
       const ys = frame.points.map((p) => p.y)
-      const margin = 30
-      const minX = Math.min(...xs) - margin
-      const maxX = Math.max(...xs) + margin
-      const minY = Math.min(...ys) - margin
-      const maxY = Math.max(...ys) + margin
-      const scale = Math.min(canvas.width / (maxX - minX), canvas.height / (maxY - minY))
-      const ox = (canvas.width - (maxX - minX) * scale) / 2 - minX * scale
-      const oy = (canvas.height - (maxY - minY) * scale) / 2 - minY * scale
-      const at = (p) => ({ x: p.x * scale + ox, y: p.y * scale + oy })
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+      const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+      const spanX = Math.max(...xs) - Math.min(...xs)
+      const spanY = Math.max(...ys) - Math.min(...ys)
+      // room around the figure for the movement the scene is going to make
+      const size = Math.max(spanX, spanY, 90) * 1.9
+      const scale = Math.min(canvas.width, canvas.height) / size
+      return { cx, cy, scale }
+    })()
+
+    /** Paint the frame with the fixed view, then print its numbers. */
+    const draw = () => {
+      const at = (p) => ({
+        x: canvas.width / 2 + (p.x - view.cx) * view.scale,
+        y: canvas.height / 2 + (p.y - view.cy) * view.scale,
+      })
 
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       ctx.lineCap = 'round'
@@ -76,7 +87,7 @@ export function startPage() {
         const v = at(p)
         ctx.fillStyle = p.im === 0 ? '#7fa892' : '#e8f3ec'
         ctx.beginPath()
-        ctx.arc(v.x, v.y, Math.max(4, p.r * scale), 0, Math.PI * 2)
+        ctx.arc(v.x, v.y, Math.max(4, p.r * view.scale), 0, Math.PI * 2)
         ctx.fill()
       }
 

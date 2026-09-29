@@ -335,6 +335,39 @@ export class Ragdoll {
   /** Rigid bones: circles straightened around their hinge every iteration. */
   private readonly bones: Bone[] = []
   /**
+   * THE CORRIDOR each limb is allowed to swing in.
+   *
+   * Everything the skeleton does is measured in DISTANCES, and one set of
+   * distances can be satisfied by a limb that has swung right over to the other
+   * side of the body - the same lengths, another pose. There it stays for ever:
+   * measured, a leg forced across the body axis kept every link at its rest
+   * length and never came back, which is what makes one leg read as a piece of
+   * the other one.
+   *
+   * So each limb also remembers the ANGLE it has at rest relative to the body's
+   * own axis, and the corridor around it: how far it may swing outward (a lot)
+   * and how far inward, towards the body's centre line (a little). Inward is
+   * what matters - a corridor narrower inward than the limb's rest angle means
+   * the limb can never reach the centre line, let alone cross it.
+   *
+   * An angle cannot be satisfied by the wrong pose, which is exactly why it is
+   * used here and nowhere else: a limb outside its corridor is turned back about
+   * its own attachment circle, and a limb inside it is never touched. It is
+   * expressed in the frame's own frame (neck to pelvis) and knows nothing about
+   * the floor, the walls or any other object.
+   */
+  private readonly guards: Array<{
+    from: number
+    tip: number
+    /** The side of the axis the limb starts on: +1 or -1. */
+    side: number
+    /** How far over the line it may go before it counts as crossed, in px. */
+    dead: number
+  }> = []
+  /** The body's own axis: the first and the last circle of the torso. */
+  private axisA = -1
+  private axisB = -1
+  /**
    * How much harder the force point has to be pushed than the whole body, so
    * that the thrust setting means "the acceleration of the body".
    */
@@ -402,6 +435,11 @@ export class Ragdoll {
       //  to 31 degrees and the legs 0, and the arm slider did nothing to a leg.
       // ------------------------------------------------------------------
       const limb = linkKindOf(chain.part)
+      // the body's own axis, remembered while the torso is being built
+      if (limb === 'torso') {
+        this.axisA = from
+        this.axisB = from + chain.at.length - 1
+      }
       const hinge = chain.hinge ?? -1
       const circles = chain.at.map((_, i) => i)
       /** A spine: it bends a little instead of being welded into one bone. */
@@ -452,8 +490,7 @@ export class Ragdoll {
       }
 
       // how the first circle of this chain hangs on the rest of the body.
-      if (chain.attachTo) {
-        // a scheme written by hand may point at a circle that is not there:
+      if (chain.attachTo) {        // a scheme written by hand may point at a circle that is not there:
         // skip the attachment instead of throwing (that killed the game loop)
         const parent = this.indexOr(chain.attachTo)
         if (parent < 0) continue
@@ -509,6 +546,10 @@ export class Ragdoll {
         if (parentPart === 'head' && chain.at.length > 1) {
           const neck = this.scheme.neck ?? { fold: LIMITS.neckFold, grow: LIMITS.neckGrow }
           this.addBrace(from + 1, parent, neck.fold, 'brace', neck.grow)
+        }
+        // ...and every LIMB also remembers its side of the body (see `guards`)
+        if (limb === 'arm' || limb === 'leg') {
+          this.addGuard(from, from + chain.at.length - 1)
         }
       }
     }
@@ -714,6 +755,93 @@ export class Ragdoll {
     return this.grip
   }
 
+  /** Remember the corridor of a limb: which side of the body axis it is on. */
+  private addGuard(from: number, tip: number): void {
+    if (this.axisA < 0 || this.axisB < 0 || tip <= from) return
+    const a = this.points[this.axisA]
+    const b = this.points[this.axisB]
+    const p = this.points[from]
+    const t = this.points[tip]
+    // the SIDE is the sign of the offset of the limb from the body's axis line.
+    // (An angle measured from the axis direction would do instead, but it counts
+    // a limb trailing straight backwards as "far across", which is exactly the
+    // case that must not be touched: in flight an arm or a leg lines up with the
+    // body, and correcting that threw the whole frame around - measured, the
+    // flight fell from 348 px to 39 px.)
+    const cross = (a.x - b.x) * (t.y - p.y) - (a.y - b.y) * (t.x - p.x)
+    const reach = Math.hypot(t.x - p.x, t.y - p.y) || 1
+    const limb0 = linkKindOf(this.points[from].part)
+    this.guards.push({
+      from,
+      tip,
+      side: cross > 0 ? 1 : -1,
+      // the dead band: how far over the line it may go before it counts as
+      // crossed. Written as a fraction of the limb's own length, so it means the
+      // same angle for a short forearm and a long leg.
+      dead: (LIMITS.guardIn[limb0] ?? 0.12) * reach,
+    })
+  }
+
+  /**
+   * Turn a limb back if it has gone over to the other side of the body axis.
+   *
+   * The correction is a rotation of the limb about its own attachment circle -
+   * the shortest way back to the line plus the dead band - and the previous
+   * positions are rotated with it, so the fix moves the limb without giving it a
+   * velocity of its own. A limb on its own side, or within the dead band, is
+   * never touched; the band is what keeps a trailing limb in flight (which lies
+   * almost exactly along the axis) out of it.
+   */
+  private holdSide(): void {
+    if (!this.guards.length || this.axisA < 0 || this.axisB < 0) return
+    const a = this.points[this.axisA]
+    const b = this.points[this.axisB]
+    const ax = a.x - b.x
+    const ay = a.y - b.y
+    const axis = Math.hypot(ax, ay) || 1
+    const base = Math.atan2(ay, ax)
+    for (const guard of this.guards) {
+      const pivot = this.points[guard.from]
+      const tip = this.points[guard.tip]
+      const lx = tip.x - pivot.x
+      const ly = tip.y - pivot.y
+      const reach = Math.hypot(lx, ly) || 1
+      // how far the limb's tip is to the wrong side of the axis line
+      const offset = ((ax * ly - ay * lx) / axis) * guard.side
+      if (offset > -guard.dead) continue // on its own side, or within the band
+      // rotate back: the tip must come to the band's edge on its own side
+      const want = -guard.dead + 0.02 * reach
+      const now = Math.atan2(ly, lx)
+      // the two ways to put the tip on the wanted side of the line; take the
+      // shorter one, and never more than a half turn
+      const target = Math.asin(Math.max(-1, Math.min(1, want / reach)))
+      const options = [base + target, base + Math.PI - target]
+      let delta = 0
+      let best = Infinity
+      for (const option of options) {
+        const raw = option - now
+        const wrapped = ((raw + Math.PI * 3) % (Math.PI * 2)) - Math.PI
+        if (Math.abs(wrapped) < best) {
+          best = Math.abs(wrapped)
+          delta = wrapped
+        }
+      }
+      const cos = Math.cos(delta)
+      const sin = Math.sin(delta)
+      for (let i = guard.from + 1; i <= guard.tip; i++) {
+        const p = this.points[i]
+        const dx = p.x - pivot.x
+        const dy = p.y - pivot.y
+        const ex = p.px - pivot.x
+        const ey = p.py - pivot.y
+        p.x = pivot.x + dx * cos - dy * sin
+        p.y = pivot.y + dx * sin + dy * cos
+        p.px = pivot.x + ex * cos - ey * sin
+        p.py = pivot.y + ex * sin + ey * cos
+      }
+    }
+  }
+
   /** Index of a named circle. */
   indexOf(name: string): number {
     const i = this.index.get(name)
@@ -815,8 +943,15 @@ export class Ragdoll {
       // first, the LINKS last - a bone must come out of a substep straight,
       // otherwise the wall clamps leave it bent (measured: the thigh bent by
       // 22-30 degrees even though every link inside it is rigid).
+      // Order matters. The walls are applied first, then the guard turns a limb
+      // back, then the links finish: with the guard before the walls the
+      // correction was partly undone and a split stopped coming back (measured:
+      // the leg settled at 71 degrees instead of 43). A second wall pass at the
+      // end of the iteration makes sure nothing is ever left outside the arena.
       this.clampToWalls(bounds)
+      this.holdSide()
       for (const link of this.links) this.satisfy(link, dt)
+      this.clampToWalls(bounds)
     }
 
     // 3b. Fit every bone to its rest shape: one rigid move, momentum kept
@@ -829,6 +964,11 @@ export class Ragdoll {
 
     // 5. One velocity response for the circles that touched a wall
     this.bounce()
+
+    // 6. The bone fit above moves circles rigidly, so it can leave one of them
+    //    outside the arena: the walls have the very last word of the substep
+    //    (measured: without this the right foot ended 4 px below the floor).
+    this.clampToWalls(bounds)
   }
 
   /**

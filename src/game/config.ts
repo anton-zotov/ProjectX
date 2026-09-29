@@ -220,6 +220,19 @@ export const LIMITS = {
    * that builds and folds it is the same for every chain, arms and legs alike.
    */
   hinge: { head: 0, torso: 0.25, arm: 1.2, leg: 1.7, attach: 0 },
+  /**
+   * THE SIDE OF THE BODY a limb belongs to: how far over the body's centre line
+   * a limb may go before the frame counts it as crossed and turns it back. It is
+   * a fraction of the limb's own length, so it means the same angle for a short
+   * forearm and a long leg.
+   *
+   * This is the one thing distances cannot express: one set of link lengths can
+   * be satisfied by a limb that has swung across the body, and there it stays for
+   * ever (measured: a leg forced across the axis kept every link at its rest
+   * length). A little slack is needed, because a limb trailing in flight lies
+   * almost exactly along the axis and must not be touched.
+   */
+  guardIn: { head: 0, torso: 0, arm: 0.08, leg: 0.08, attach: 0 },
   neckFold: 0.94,
   neckGrow: 1.01,
 }
