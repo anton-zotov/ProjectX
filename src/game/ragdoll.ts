@@ -123,6 +123,12 @@ interface Chain {
   window?: number
   /** A spine: the chain gives and bends a little instead of being welded. */
   flex?: boolean
+  /**
+   * The chain's first circle IS the body circle it hangs on (see
+   * `ChainScheme.shareFirst`): the limb grows straight out of the body, with no
+   * circle of its own and no link from the body into it.
+   */
+  shareFirst?: boolean
 }
 
 const R = BODY.radius.body
@@ -218,20 +224,32 @@ export const buildChains = (scheme: SkeletonScheme): Chain[] => {
             march([0, first], [0, step], c.count)
           : c.attachTo === undefined
             ? march([0, first], [0, step], c.count)
-            : bentMarch(
-              limbStart(
-                circleY(resolve(c.attachTo)),
-                deg(c.attachAngle ?? 0),
+            : c.shareFirst === true
+              ? // the limb IS a continuation of the body: its first point is the
+                // body circle itself, and it marches on from there at its angle
+                bentMarch(
+                  [0, circleY(resolve(c.attachTo))],
+                  deg(c.angle ?? 0),
+                  deg(c.preBend ?? 0),
+                  side,
+                  step * (c.step ?? 1),
+                  c.count,
+                  c.hinge ?? -1,
+                )
+              : bentMarch(
+                limbStart(
+                  circleY(resolve(c.attachTo)),
+                  deg(c.attachAngle ?? 0),
+                  side,
+                  attachRest * (c.attachLength ?? 1),
+                ),
+                deg(c.angle ?? 0),
+                deg(c.preBend ?? 0),
                 side,
-                attachRest * (c.attachLength ?? 1),
-              ),
-              deg(c.angle ?? 0),
-              deg(c.preBend ?? 0),
-              side,
-              step * (c.step ?? 1),
-              c.count,
-              c.hinge ?? -1,
-            )
+                step * (c.step ?? 1),
+                c.count,
+                c.hinge ?? -1,
+              )
     return {
       part: c.part as PartId,
       prefix: c.part,
@@ -245,6 +263,7 @@ export const buildChains = (scheme: SkeletonScheme): Chain[] => {
       attachTo: c.attachTo ? resolve(c.attachTo) : undefined,
       attachKind: c.part === 'torso' ? 'head' : c.attachTo ? 'attach' : undefined,
       attachAlong: c.attachAlong ? resolve(c.attachAlong) : undefined,
+      shareFirst: c.shareFirst === true,
     }
   })
 }
@@ -409,12 +428,20 @@ export class Ragdoll {
   constructor(x: number, y: number, scale: number = BODY.scale, scheme: SkeletonScheme = NORMAL) {
     this.scheme = scheme
     for (const chain of buildChains(scheme)) {
-      const from = this.points.length
+      // A CONTINUATION: the first circle of this chain is the body circle it
+      // hangs on, so it is not created again - only aliased under the limb's own
+      // name. Everything else about the chain is built as usual.
+      const shared = chain.shareFirst && chain.attachTo ? this.indexOr(chain.attachTo) : -1
+      const from = shared >= 0 ? shared : this.points.length
       // mass comes from the layout radius, so changing BODY.scale (a look
       // setting) does not silently turn the character into a different body
       const mass = chain.radius * chain.radius * BODY.density
 
       chain.at.forEach(([lx, ly], i) => {
+        if (shared >= 0 && i === 0) {
+          this.index.set(nameOf(chain, 0), shared)
+          return
+        }
         const cx = x + lx * scale
         const cy = y + ly * scale
         this.index.set(nameOf(chain, i), this.points.length)
@@ -457,7 +484,14 @@ export class Ragdoll {
         this.axisB = from + chain.at.length - 1
       }
       const hinge = chain.hinge ?? -1
-      const circles = chain.at.map((_, i) => i)
+      /**
+       * The circles of this chain, by its own numbering. A SHARED first circle
+       * is left out: it belongs to the body, and putting it into this limb's
+       * bones makes the two legs fight over the pelvis (measured: with it, the
+       * frame stopped standing - 3/6 - and its flight fell to 32 px, because each
+       * leg's fit kept yanking the shared circle away from the other leg's fit).
+       */
+      const circles = chain.at.map((_, i) => i).filter((i) => !(shared >= 0 && i === 0))
       /** A spine: it bends a little instead of being welded into one bone. */
       const flex = chain.flex === true
       const bones =
@@ -513,11 +547,16 @@ export class Ragdoll {
       }
 
       // how the first circle of this chain hangs on the rest of the body.
-      if (chain.attachTo) {        // a scheme written by hand may point at a circle that is not there:
+      if (chain.attachTo) {
+        // a scheme written by hand may point at a circle that is not there:
         // skip the attachment instead of throwing (that killed the game loop)
         const parent = this.indexOr(chain.attachTo)
         if (parent < 0) continue
-        this.addLink(parent, from, chain.attachKind ?? 'attach', true, true)
+        // A shared first circle IS the parent, so there is nothing to attach and
+        // the joint's springs are one circle further out (they measure the limb
+        // from the body, and the limb now starts at the body circle itself).
+        const shift = shared >= 0 ? 1 : 0
+        if (shared < 0) this.addLink(parent, from, chain.attachKind ?? 'attach', true, true)
         const parentPart = linkKindOf(this.points[parent].part)
         if (chain.window !== undefined && chain.at.length > 1) {
           // THE ONE-LINK JOINT (a scheme with a `window`): a spring towards the
@@ -550,15 +589,15 @@ export class Ragdoll {
           // circle fixes which way it points. One alone would let the limb
           // swing right around its joint and turn inside out.
           const swing = chain.swing ?? Math.max(LIMITS.swing[parentPart], LIMITS.swing[limb])
-          if (swing > 0 && chain.at.length > 1) {
-            this.addBrace(parent, from + 1, Math.cos(swing / 2), 'pose')
+          if (swing > 0 && chain.at.length > 1 + shift) {
+            this.addBrace(parent, from + 1 + shift, Math.cos(swing / 2), 'pose')
             if (chain.attachAlong && this.indexOr(chain.attachAlong) >= 0) {
               // The third link is what makes the attitude unique. Two links have
               // a mirror solution (the limb turned inside out) in which every
               // length is the same again - the springs would see nothing wrong
               // and leave it there. This one cannot be short enough in that
               // solution, so the limb cannot get there at all.
-              this.addBrace(this.indexOr(chain.attachAlong), from, 0.45, 'pose', 1.5)
+              this.addBrace(this.indexOr(chain.attachAlong), from + shift, 0.45, 'pose', 1.5)
             }
           }
         }
@@ -568,7 +607,7 @@ export class Ragdoll {
         // little and no more (measured: a 120 degree turn is impossible).
         if (parentPart === 'head' && chain.at.length > 1) {
           const neck = this.scheme.neck ?? { fold: LIMITS.neckFold, grow: LIMITS.neckGrow }
-          this.addBrace(from + 1, parent, neck.fold, 'brace', neck.grow)
+          this.addBrace(from + 1 + shift, parent, neck.fold, 'brace', neck.grow)
         }
         // ...and every LIMB also remembers its side of the body (see `guards`)
         if (limb === 'arm' || limb === 'leg') {

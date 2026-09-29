@@ -28,6 +28,16 @@ export interface ChainScheme {
    * keywords 'neck' (first vertebra) and 'pelvis' (last one).
    */
   attachTo?: string
+  /**
+   * THE LIMB IS A CONTINUATION OF THE BODY: its first circle IS the body circle
+   * it hangs on, so the chain grows straight out of the body with no separate
+   * "hip" circle and no link from the body into it. `count` then includes that
+   * shared circle, i.e. a leg of six circles adds five.
+   *
+   * The limb's own circles are named as usual (`legL1`, `legL2`, ...), and the
+   * shared one answers to both of its names (`torso4` and `legL0`).
+   */
+  shareFirst?: boolean
   /** Direction of the attach link, degrees off the body axis. */
   attachAngle?: number
   /** Length of the attach link, as a factor of the touching distance. */
@@ -242,8 +252,70 @@ export const VERTEBRAE: SkeletonScheme = {
   ],
 }
 
+/* ------------------------------------------------------------------ *
+ *  3. "continuous" - the limbs are a continuation of the body.
+ *
+ *  The same skeleton as `normal`, with one difference: a limb has no separate
+ *  first circle and no link from the body into it. The pelvis itself is the
+ *  first circle of each leg, the neck itself the first circle of each arm, so a
+ *  leg reads as the body simply bending and going on downwards - which is what
+ *  the author asked for. The attitude links stay (they are what hold a pose);
+ *  the editor or the scheme can drop them, and then the limb is a free pendulum.
+ * ------------------------------------------------------------------ */
+
+export const CONTINUOUS: SkeletonScheme = {
+  id: 'continuous',
+  name: 'сплошная цепочка (ноги из таза)',
+  body: { count: 5, headRadius: 1.8, neckGap: 1 },
+  neck: { fold: 0.94, grow: 1.01 },
+  chains: [
+    { part: 'head', count: 1 },
+    { part: 'torso', count: 5, attachTo: 'head', flex: false },
+    {
+      part: 'armL',
+      count: 5,
+      shareFirst: true,
+      attachTo: 'neck',
+      attachAngle: 45,
+      angle: 40,
+      hinge: 1,
+      swing: 1.2,
+    },
+    {
+      part: 'armR',
+      count: 5,
+      shareFirst: true,
+      attachTo: 'neck',
+      attachAngle: 45,
+      angle: 40,
+      hinge: 1,
+      swing: 1.2,
+    },
+    {
+      part: 'legL',
+      count: 6,
+      shareFirst: true,
+      attachTo: 'pelvis',
+      attachAngle: 36,
+      angle: 14,
+      hinge: 2,
+      swing: 0.8,
+    },
+    {
+      part: 'legR',
+      count: 6,
+      shareFirst: true,
+      attachTo: 'pelvis',
+      attachAngle: 36,
+      angle: 14,
+      hinge: 2,
+      swing: 0.8,
+    },
+  ],
+}
+
 /** Everything the game and the editor can choose from. */
-export const SKELETONS: readonly SkeletonScheme[] = [NORMAL, VERTEBRAE]
+export const SKELETONS: readonly SkeletonScheme[] = [NORMAL, VERTEBRAE, CONTINUOUS]
 
 export const DEFAULT_SKELETON = NORMAL.id
 
