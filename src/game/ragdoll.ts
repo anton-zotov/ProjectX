@@ -367,6 +367,8 @@ export class Ragdoll {
   /** The body's own axis: the first and the last circle of the torso. */
   private axisA = -1
   private axisB = -1
+  /** Is the side guard on right now? (SIM.sideGuard, the admin checkbox.) */
+  private sideGuard = SIM.sideGuard
   /**
    * How much harder the force point has to be pushed than the whole body, so
    * that the thrust setting means "the acceleration of the body".
@@ -755,6 +757,11 @@ export class Ragdoll {
     return this.grip
   }
 
+  /** Switch the side guard on or off (the admin checkbox). */
+  setSideGuard(on: boolean): void {
+    this.sideGuard = on
+  }
+
   /** Remember the corridor of a limb: which side of the body axis it is on. */
   private addGuard(from: number, tip: number): void {
     if (this.axisA < 0 || this.axisB < 0 || tip <= from) return
@@ -793,6 +800,7 @@ export class Ragdoll {
    * almost exactly along the axis) out of it.
    */
   private holdSide(): void {
+    if (this.sideGuard === false) return
     if (!this.guards.length || this.axisA < 0 || this.axisB < 0) return
     const a = this.points[this.axisA]
     const b = this.points[this.axisB]
@@ -809,6 +817,12 @@ export class Ragdoll {
       // how far the limb's tip is to the wrong side of the axis line
       const offset = ((ax * ly - ay * lx) / axis) * guard.side
       if (offset > -guard.dead) continue // on its own side, or within the band
+      // ...and the same for the circle it hangs on: if the attachment itself is
+      // over the line, turning the limb about it cannot bring it back, and
+      // fighting anyway is what pumped energy into the frame.
+      const pivotOffset =
+        ((ax * (pivot.y - b.y) - ay * (pivot.x - b.x)) / axis) * guard.side
+      if (pivotOffset < -guard.dead) continue
       // rotate back: the tip must come to the band's edge on its own side
       const want = -guard.dead + 0.02 * reach
       const now = Math.atan2(ly, lx)
@@ -826,18 +840,41 @@ export class Ragdoll {
           delta = wrapped
         }
       }
+      // THE CORRECTION BEHAVES LIKE A WALL, not like a spring and not like a
+      // snap: the limb is put back on the band's edge and the part of its motion
+      // that was carrying it inward is removed, while the rest of its motion is
+      // left alone. It is applied ONCE per substep (a wall does not fight a
+      // solver iteration twenty times): doing it inside the loop made the frame
+      // jerk under a load, and doing it with a speed limit made the guard drag
+      // the limbs for the whole flight (measured: 69 px instead of 348).
       const cos = Math.cos(delta)
       const sin = Math.sin(delta)
+      // the inward normal of the axis line, on the limb's own side
+      const nx = (-ay / axis) * guard.side
+      const ny = (ax / axis) * guard.side
       for (let i = guard.from + 1; i <= guard.tip; i++) {
         const p = this.points[i]
         const dx = p.x - pivot.x
         const dy = p.y - pivot.y
-        const ex = p.px - pivot.x
-        const ey = p.py - pivot.y
         p.x = pivot.x + dx * cos - dy * sin
         p.y = pivot.y + dx * sin + dy * cos
-        p.px = pivot.x + ex * cos - ey * sin
-        p.py = pivot.y + ex * sin + ey * cos
+        // velocity: keep what is along the line, drop what goes over it
+        const vx = p.x - p.px
+        const vy = p.y - p.py
+        const inward = vx * nx + vy * ny
+        if (inward < 0) {
+          p.px = p.x - (vx - inward * nx)
+          p.py = p.y - (vy - inward * ny)
+        } else {
+          // the rotation moved the circle; carry its old position with it so the
+          // fix itself adds no velocity
+          const ex = p.px - pivot.x
+          const ey = p.py - pivot.y
+          const tx = pivot.x + ex * cos - ey * sin
+          const ty = pivot.y + ex * sin + ey * cos
+          p.px = tx
+          p.py = ty
+        }
       }
     }
   }
@@ -949,10 +986,12 @@ export class Ragdoll {
       // the leg settled at 71 degrees instead of 43). A second wall pass at the
       // end of the iteration makes sure nothing is ever left outside the arena.
       this.clampToWalls(bounds)
-      this.holdSide()
       for (const link of this.links) this.satisfy(link, dt)
-      this.clampToWalls(bounds)
     }
+
+    // 3c. The side guard: a limb that has gone over the body's centre line is
+    //     put back on its own side, once per substep (see `holdSide`).
+    this.holdSide()
 
     // 3b. Fit every bone to its rest shape: one rigid move, momentum kept
     for (const bone of this.bones) this.straighten(bone)

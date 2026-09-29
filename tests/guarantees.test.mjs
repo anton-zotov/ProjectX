@@ -286,8 +286,7 @@ test('GUARANTEE: every skeleton scheme builds a working frame', () => {
   }
 })
 
-test('GUARANTEE: a hand-made scheme cannot kill the frame', () => {
-  // The editor lets a person write any scheme. One that points at a circle that
+test('GUARANTEE: a hand-made scheme cannot kill the frame', () => {  // The editor lets a person write any scheme. One that points at a circle that
   // is not there used to make the frame non-finite, and with it the whole game
   // loop stopped for good (measured: "the game hangs after applying a few
   // times"). Either the scheme is refused, or the frame ignores the bad link.
@@ -307,4 +306,67 @@ test('GUARANTEE: a hand-made scheme cannot kill the frame', () => {
   const r = new Ragdoll(500, 200, 1, broken)
   for (let i = 0; i < 120; i++) run(r, 1, fight)
   assert.ok(finite(r), 'even a broken scheme leaves the frame with real numbers')
+})
+
+/* ------------------------------------------------------------------ *
+ *  11. The frame is not a motor: it may not push itself around.
+ * ------------------------------------------------------------------ */
+
+test('GUARANTEE: without input the frame does not accelerate itself', () => {
+  // Everything the frame does is a constraint solved against itself, and a
+  // constraint that fights the solver can pump energy in - which is exactly how
+  // it was reported: "it accelerates the whole body in different directions
+  // without pressing anything". So: no gravity, no thrust, from rest, and it
+  // must stay where it is.
+  const arena = { w: 4000, h: 4000 }
+  const r = new Ragdoll(2000, 2000)
+  const start = r.points.reduce((s, p) => ({ x: s.x + p.x / r.points.length, y: s.y + p.y / r.points.length }), {
+    x: 0,
+    y: 0,
+  })
+  const speed = () =>
+    r.points.reduce((worst, p) => Math.max(worst, Math.hypot(p.x - p.px, p.y - p.py)), 0)
+  const idle = { thrustX: 0, thrustY: 0, gravity: 0 }
+  let peak = 0
+  for (let i = 0; i < 60 * 10; i++) {
+    r.step(SIM.dt, idle, arena)
+    peak = Math.max(peak, speed())
+  }
+  const end = r.points.reduce((s, p) => ({ x: s.x + p.x / r.points.length, y: s.y + p.y / r.points.length }), {
+    x: 0,
+    y: 0,
+  })
+  const drift = Math.hypot(end.x - start.x, end.y - start.y)
+  assert.ok(drift < 2, `the frame drifted ${drift.toFixed(2)} px in 10 s of doing nothing`)
+  assert.ok(peak < 0.5, `and never picked up speed on its own (fastest circle ${peak.toFixed(2)} px per step)`)
+})
+
+/* ------------------------------------------------------------------ *
+ *  12. The side guard, when it is switched on.
+ * ------------------------------------------------------------------ */
+
+test('GUARANTEE: the side guard never lets the frame accelerate itself', () => {
+  // The guard turns limbs back by moving them, and a correction that fights the
+  // solver is exactly how a frame starts pushing itself around ("it accelerates
+  // the whole body in different directions without pressing anything"). With the
+  // guard ON and no input at all, nothing may move.
+  const arena = { w: 4000, h: 4000 }
+  const r = new Ragdoll(2000, 2000)
+  r.setSideGuard(true)
+  const centre = () =>
+    r.points.reduce((s, p) => ({ x: s.x + p.x / r.points.length, y: s.y + p.y / r.points.length }), {
+      x: 0,
+      y: 0,
+    })
+  const start = centre()
+  const idle = { thrustX: 0, thrustY: 0, gravity: 0 }
+  let peak = 0
+  for (let i = 0; i < 60 * 10; i++) {
+    r.step(SIM.dt, idle, arena)
+    peak = Math.max(peak, r.points.reduce((w, p) => Math.max(w, Math.hypot(p.x - p.px, p.y - p.py)), 0))
+  }
+  const end = centre()
+  const drift = Math.hypot(end.x - start.x, end.y - start.y)
+  assert.ok(drift < 2, `with the guard on the frame drifted ${drift.toFixed(2)} px in 10 s of doing nothing`)
+  assert.ok(peak < 0.5, `and never picked up speed on its own (fastest circle ${peak.toFixed(2)} px per step)`)
 })

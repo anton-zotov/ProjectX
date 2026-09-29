@@ -76,6 +76,7 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const tuning = document.querySelector<HTMLInputElement>('#s-tuning')!
   const skeleton = document.querySelector<HTMLInputElement>('#s-skeleton')!
   const springs = document.querySelector<HTMLInputElement>('#s-springs')!
+  const guard = document.querySelector<HTMLInputElement>('#s-guard')!
   const quality = document.querySelector<HTMLInputElement>('#s-quality')!
   const profiler = document.querySelector<HTMLInputElement>('#s-profiler')!
   const schemePick = document.querySelector<HTMLSelectElement>('#s-scheme')!
@@ -172,6 +173,10 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   // the skeleton itself, live: every link drawn as a spring that breathes
   springs.addEventListener('change', () => {
     s.springs = springs.checked
+  })
+  // the experimental side guard: keep every limb on its own side of the body
+  guard.addEventListener('change', () => {
+    s.sideGuard = guard.checked
   })
   // render quality: 2x buffer is smoother, 1x is ~4x cheaper for the GPU
   quality.addEventListener('change', () => {

@@ -59,6 +59,27 @@ export const SIM = {
    */
   jointGrip: 4,
   /**
+   * How fast the SIDE GUARD may turn a limb back to its own side of the body,
+   * in px of the limb's tip per substep. The same idea as `jointGrip`, for the
+   * same reason: a limb that has gone over the body's centre line is walked back
+   * smoothly. Turning it back instantly, as far as it had gone, snapped the
+   * whole frame (reported as "as if he got an electric shock" under a load on
+   * the legs, with every joint showing red because they were slipping too).
+   */
+  guardGrip: 1.5,
+  /**
+   * THE SIDE GUARD, off by default. It keeps every limb on its own side of the
+   * body's centre line (see `guards` in ragdoll.ts) and it is the only thing that
+   * can stop a limb from swinging across the body and staying there - distances
+   * cannot see that.
+   *
+   * It is off by default because it is not finished: it holds a limb in ordinary
+   * play, but in a hard whip (a foot shoved across the body at 360 px/s in zero
+   * gravity) the limb swings back and forth over the line and the guard cannot
+   * keep up. Flip the checkbox in the admin panel and judge for yourself.
+   */
+  sideGuard: false,
+  /**
    * How elastic the whole frame is; 1 = the tuning below exactly as written.
    * It scales the stretch allowance of every link AND softens its spring, so
    * the admin slider can be dragged while the character is flying and the

@@ -36,6 +36,8 @@ export interface GameSettings {
   showTuning: boolean // paint what the sliders change over the character
   /** Draw every link as a breathing spring (the skeleton, live). */
   springs: boolean
+  /** The experimental side guard: keep every limb on its own side of the body. */
+  sideGuard: boolean
 }
 
 export const defaultSettings = (): GameSettings => ({
@@ -54,6 +56,7 @@ export const defaultSettings = (): GameSettings => ({
   jointGrip: 0.25, // 0 = springs only (floppy); 1 = joints hold, the frame stands
   showTuning: true, // the sliders are drawn on the figure while we tune
   springs: false, // the links as springs: on demand, it is a busy picture
+  sideGuard: false, // the experimental side guard (see SIM.sideGuard)
 })
 
 /* ------------------------------------------------------------------ *
@@ -157,6 +160,8 @@ export class ArenaScene implements Scene {
   private builtElasticity = 0
   /** Joint grip last handed to the ragdoll. */
   private builtGrip = -1
+  /** The side-guard state the frame was built with (the checkbox flips it live). */
+  private builtGuard = false
 
   constructor(settings: GameSettings) {
     this.settings = settings
@@ -191,6 +196,8 @@ export class ArenaScene implements Scene {
     body.setElasticity(this.settings.elasticity)
     body.setJointGrip(this.settings.jointGrip)
     this.builtGrip = this.settings.jointGrip
+    body.setSideGuard(this.settings.sideGuard)
+    this.builtGuard = this.settings.sideGuard
     return body
   }
 
@@ -238,6 +245,11 @@ export class ArenaScene implements Scene {
     if (this.builtGrip !== this.settings.jointGrip) {
       this.builtGrip = this.settings.jointGrip
       this.ragdoll.setJointGrip(this.settings.jointGrip)
+    }
+    // the experimental side guard, live too: flip it and watch the limbs
+    if (this.builtGuard !== this.settings.sideGuard) {
+      this.builtGuard = this.settings.sideGuard
+      this.ragdoll.setSideGuard(this.settings.sideGuard)
     }
     this.colorTime += dt * this.settings.colorSpeed
 
