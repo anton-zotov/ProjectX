@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProjectX · ветка engine-planck (Box2D)</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #0d0f14; color: #d8e6dd; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+      #view { display: block; width: 100vw; height: 100vh; }
+      #admin-panel {
+        position: fixed; top: 12px; right: 12px; width: 250px;
+        padding: 10px 12px; background: #12171df2; border: 1px solid #1f2a25; border-radius: 10px;
+      }
+      #admin-panel b { display: block; margin-bottom: 8px; color: #9fe8c6; letter-spacing: 1px; }
+      label { display: block; margin: 8px 0; }
+      label input[type='range'] { width: 100%; }
+      output { color: #3fe09b; }
+      button {
+        width: 100%; margin-top: 8px; padding: 6px; color: #9fe8c6;
+        background: #101a16; border: 1px solid rgba(90, 255, 170, 0.3); border-radius: 8px;
+        font: inherit; cursor: pointer;
+      }
+      #hud { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #1f2a25; color: #7fa892; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="admin-panel">
+      <b>engine-planck · Box2D</b>
+      <label>гравитация <input id="s-gravity" type="range" min="0" max="600" step="20" value="180" /><output id="o-gravity">180</output></label>
+      <label>тяга <input id="s-thrust" type="range" min="0" max="6000" step="100" value="3000" /><output id="o-thrust">3000</output></label>
+      <label>предел колена, ° <input id="s-limit" type="range" min="0" max="160" step="5" value="140" /><output id="o-limit">140</output></label>
+      <label>мотор колена, об/с <input id="s-motor" type="range" min="-3" max="3" step="0.5" value="0" /><output id="o-motor">0</output></label>
+      <button id="respawn">пересобрать</button>
+      <div id="hud"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
