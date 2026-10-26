@@ -1,4 +1,6 @@
 import './style.css'
+import { SkeletonEditor } from './editor'
+import { allSkeletons, skeletonById } from './game/skeletons'
 import { Engine } from './engine'
 import { ArenaScene, defaultSettings, type GameSettings } from './scenes/arena'
 
@@ -75,6 +77,8 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
   const skeleton = document.querySelector<HTMLInputElement>('#s-skeleton')!
   const quality = document.querySelector<HTMLInputElement>('#s-quality')!
   const profiler = document.querySelector<HTMLInputElement>('#s-profiler')!
+  const schemePick = document.querySelector<HTMLSelectElement>('#s-scheme')!
+  const openEditor = document.querySelector<HTMLButtonElement>('#open-editor')!
 
   const syncOutputs = (): void => {
     oThrust.textContent = String(s.thrust)
@@ -87,6 +91,27 @@ function setupAdminPanel(s: GameSettings, engine: Engine): void {
     oCell.textContent = String(s.cell)
     oBody.textContent = `${Math.round(s.bodyScale * 100)} %`
   }
+
+  /** The scheme picker always lists what the game can actually build. */
+  const fillSchemes = (): void => {
+    schemePick.innerHTML = allSkeletons()
+      .map((s) => `<option value="${s.id}">${s.name}</option>`)
+      .join('')
+    schemePick.value = s.skeleton
+  }
+  fillSchemes()
+  schemePick.addEventListener('change', () => {
+    s.skeleton = schemePick.value
+  })
+
+  const editor = new SkeletonEditor(skeletonById(s.skeleton))
+  openEditor.addEventListener('click', () => {
+    editor.open(skeletonById(s.skeleton), (edited) => {
+      fillSchemes()
+      schemePick.value = edited.id
+      s.skeleton = edited.id
+    })
+  })
 
   toggle.addEventListener('click', () => {
     panel.classList.toggle('hidden')

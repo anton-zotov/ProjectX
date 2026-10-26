@@ -31,24 +31,16 @@ export const SIM = {
   substeps: 4,
   /** Constraint solver iterations per substep (XPBD / Gauss-Seidel). */
   solverIterations: 20,
-  /**
-   * Circles that are NOT linked to each other (the two legs, a limb and the
-   * body, the head and the body) are kept apart as well: in the original the
-   * circles never intersect, and without this the two legs pass straight
-   * through one another in the air and read as one thick leg.
-   * `contactReach` says how far apart (in radii) a pair may be and still be
-   * checked every iteration - only close pairs are kept in the list.
+  /*
+   * REMOVED: the internal collision of the body (a push between circles that
+   * are not linked, and a gentler one between the two legs - `contactReach`,
+   * `twinPush`). The parts of the frame now pass through each other: a head
+   * through an arm, a thigh through the pelvis. Internal collision reads well
+   * in a still picture and ruins the movement - the frame catches on itself and
+   * jams in poses it cannot leave (an arm that cannot swing over the shoulder,
+   * a hip stuck after a split), and each jam asks for another special case.
+   * What holds the shape is the skeleton, the floor and the walls.
    */
-  contactReach: 3.5,
-  /**
-   * How hard the two limbs of a pair (leg against leg, arm against arm) push
-   * each other apart per solver iteration. Gentler than the contact between a
-   * limb and the body: a hard shove there knocks the hips about. 0.25 was too
-   * gentle once the frame kept its speed in flight (the legs sank 1.7 px into
-   * each other at full thrust); 0.4 leaves 0.15 px and the hips still do not
-   * twitch.
-   */
-  twinPush: 0.4,
   /**
    * What holds a joint at its angle - the "grip" of a posable doll.
    *
